@@ -1,0 +1,8 @@
+py-clob-client
+web3
+pandas
+requests
+python-dotenv
+ccxt  # for additional exchange integrations if needed
+numpy
+matplotlib  # for backtesting visualization
