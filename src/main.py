@@ -65,8 +65,12 @@ class PolymarketTrader:
                 'arbitrage_threshold': 0.01,   # 1 cent arbitrage
                 'max_size': 50
             },
-            'counter': {
-                'max_size': 25  # Smaller positions for counter trading
+                        'counter': {
+                'max_size': 25,  # Smaller positions for behavioral strategy
+                'lookback_days': 30,  # Analyze last 30 days performance
+                'min_trades': 10,  # Minimum trades to consider trader
+                'top_traders_count': 10,  # Track top 10 worst performers
+                'update_interval_hours': 24  # Update trader list daily
             }
         }
         

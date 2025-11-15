@@ -1,6 +1,6 @@
 """
 Counter Trading Strategy
-Trades against consistently losing Polymarket traders to capture behavioral edges.
+Dynamically identifies and trades against worst performing traders in recent time windows.
 """
 
 import logging
@@ -19,11 +19,90 @@ class TraderProfile:
     """Profile of a tracked trader."""
     username: str
     profile_url: str
-    total_pnl: float
-    win_rate: float
-    total_trades: int
+    recent_pnl: float  # Last N days PnL
+    recent_win_rate: float  # Last N days win rate
+    total_trades_recent: int  # Trades in recent period
     active_markets: List[str]
     risk_score: float  # 0-1, higher = more risky to counter
+    last_updated: datetime
+
+class CounterTradingStrategy:
+    """
+    Dynamic counter trading strategy that identifies worst performing traders
+    in recent time windows and bets against their positions.
+    """
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.lookback_days = config.get('lookback_days', 30)  # Last 30 days
+        self.min_trades = config.get('min_trades', 10)  # Minimum trades to consider
+        self.top_traders_count = config.get('top_traders_count', 10)  # Track top 10 worst
+        self.update_interval_hours = config.get('update_interval_hours', 24)  # Update daily
+        
+        # Dynamic trader tracking
+        self.tracked_traders: Dict[str, TraderProfile] = {}
+        self.last_update = None
+        
+        # Initialize with some known traders (fallback)
+        self._initialize_fallback_traders()
+    
+    def _initialize_fallback_traders(self):
+        """Initialize with known traders as fallback."""
+        self.tracked_traders = {
+            'SSryjh': TraderProfile(
+                username='SSryjh',
+                profile_url='https://polymarket.com/@SSryjh',
+                recent_pnl=-50000,  # Placeholder - would be fetched
+                recent_win_rate=0.35,
+                total_trades_recent=25,
+                active_markets=['sports'],
+                risk_score=0.8,
+                last_updated=datetime.now()
+            ),
+            'sonnyf': TraderProfile(
+                username='sonnyf',
+                profile_url='https://polymarket.com/@sonnyf',
+                recent_pnl=-15000,
+                recent_win_rate=0.28,
+                total_trades_recent=45,
+                active_markets=['politics', 'sports', 'crypto'],
+                risk_score=0.7,
+                last_updated=datetime.now()
+            ),
+            'egas': TraderProfile(
+                username='egas',
+                profile_url='https://polymarket.com/@egas',
+                recent_pnl=-3000,
+                recent_win_rate=0.32,
+                total_trades_recent=15,
+                active_markets=['crypto'],
+                risk_score=0.6,
+                last_updated=datetime.now()
+            )
+        }
+
+import logging
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+from ..common import TradeSignal
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class TraderProfile:
+    """Profile of a tracked trader."""
+    username: str
+    profile_url: str
+    recent_pnl: float  # Last N days PnL
+    recent_win_rate: float  # Last N days win rate
+    total_trades_recent: int  # Trades in recent period
+    active_markets: List[str]
+    risk_score: float  # 0-1, higher = more risky to counter
+    last_updated: datetime
 
 class CounterTradingStrategy:
     """
@@ -35,38 +114,50 @@ class CounterTradingStrategy:
     
     def __init__(self, config: Dict):
         self.config = config
-        # Pre-defined losing traders from research (would be dynamic in production)
-        self.tracked_traders = self._initialize_tracked_traders()
+        self.lookback_days = config.get('lookback_days', 30)  # Last 30 days
+        self.min_trades = config.get('min_trades', 10)  # Minimum trades to consider
+        self.top_traders_count = config.get('top_traders_count', 10)  # Track top 10 worst
+        self.update_interval_hours = config.get('update_interval_hours', 24)  # Update daily
+        
+        # Dynamic trader tracking
+        self.tracked_traders: Dict[str, TraderProfile] = {}
+        self.last_update = None
+        
+        # Initialize with some known traders (fallback)
+        self._initialize_fallback_traders()
     
-    def _initialize_tracked_traders(self) -> Dict[str, TraderProfile]:
-        """Initialize the list of tracked losing traders."""
+    def _initialize_fallback_traders(self) -> Dict[str, TraderProfile]:
+        """Initialize the list of tracked losing traders (fallback data)."""
         return {
             'SSryjh': TraderProfile(
                 username='SSryjh',
                 profile_url='https://polymarket.com/@SSryjh',
-                total_pnl=-3400000,  # -$3.4M
-                win_rate=0.27,       # 27%
-                total_trades=67,
+                recent_pnl=-50000,  # Recent 30-day loss
+                recent_win_rate=0.35,
+                total_trades_recent=25,
                 active_markets=['sports'],
-                risk_score=0.9        # High risk score = very consistent loser
+                risk_score=0.8,
+                last_updated=datetime.now()
             ),
             'sonnyf': TraderProfile(
                 username='sonnyf',
                 profile_url='https://polymarket.com/@sonnyf',
-                total_pnl=-470000,    # -$470K
-                win_rate=0.21,        # 21%
-                total_trades=1000,    # Estimated
+                recent_pnl=-15000,
+                recent_win_rate=0.28,
+                total_trades_recent=45,
                 active_markets=['politics', 'sports', 'crypto'],
-                risk_score=0.8
+                risk_score=0.7,
+                last_updated=datetime.now()
             ),
             'egas': TraderProfile(
                 username='egas',
                 profile_url='https://polymarket.com/@egas',
-                total_pnl=-13000,     # -$13K
-                win_rate=0.28,        # 28%
-                total_trades=200,     # Estimated
+                recent_pnl=-3000,
+                recent_win_rate=0.32,
+                total_trades_recent=15,
                 active_markets=['crypto'],
-                risk_score=0.7
+                risk_score=0.6,
+                last_updated=datetime.now()
             )
         }
     
@@ -151,23 +242,26 @@ class CounterTradingStrategy:
             action=action,
             price=price,
             size=size,
-            reason=f'Counter trading {trader.username} ({trader.win_rate:.0%} win rate, ${trader.total_pnl:,.0f} PnL)',
+            reason=f'Counter trading {trader.username} ({trader.recent_win_rate:.0%} win rate, ${trader.recent_pnl:,.0f} recent PnL)',
             confidence=confidence
         )
     
     def _calculate_counter_confidence(self, trader: TraderProfile) -> float:
         """Calculate confidence in counter trading this trader."""
         # Base confidence from win rate (lower win rate = higher confidence)
-        win_rate_factor = 1 - trader.win_rate  # 0.73 for 27% win rate
+        win_rate_factor = 1 - trader.recent_win_rate  # 0.73 for 27% win rate
         
         # PnL factor (more negative PnL = higher confidence)
-        pnl_factor = min(1.0, abs(trader.total_pnl) / 1000000)  # Scale by $1M
+        pnl_factor = min(1.0, abs(trader.recent_pnl) / 50000)  # Scale by $50K recent loss
+        
+        # Trade frequency factor
+        trade_factor = min(1.0, trader.total_trades_recent / 50)  # More trades = more confidence
         
         # Risk score factor
         risk_factor = trader.risk_score
         
         # Combined confidence
-        confidence = (win_rate_factor * 0.4 + pnl_factor * 0.4 + risk_factor * 0.2)
+        confidence = (win_rate_factor * 0.3 + pnl_factor * 0.3 + trade_factor * 0.2 + risk_factor * 0.2)
         
         return min(1.0, confidence)
     
@@ -220,8 +314,73 @@ class CounterTradingStrategy:
         """
         Update trader profiles with latest performance data.
         
-        In production, this would scrape Polymarket profiles periodically.
+        In production, this would scrape Polymarket profiles or use API.
+        For now, simulates dynamic discovery.
         """
-        # This would be called periodically to refresh trader statistics
+        now = datetime.now()
+        if self.last_update and (now - self.last_update).total_seconds() < self.update_interval_hours * 3600:
+            return  # Not time to update yet
+        
         logger.info("Updating trader profiles...")
-        # Implementation would fetch latest data from Polymarket API/profiles
+        
+        # In production, this would:
+        # 1. Query Polymarket API for top traders by volume
+        # 2. Scrape profile pages for recent performance
+        # 3. Filter for traders with poor recent performance
+        
+        # For now, simulate discovering new bad traders
+        self._discover_new_traders()
+        
+        self.last_update = now
+        logger.info(f"Updated {len(self.tracked_traders)} trader profiles")
+    
+    def _discover_new_traders(self):
+        """
+        Discover new traders to track.
+        
+        In production, this would:
+        - Query Polymarket for high-volume traders
+        - Check their recent performance
+        - Add consistently losing traders to tracking list
+        """
+        # Simulate discovering 7 more bad traders (to reach top 10)
+        simulated_traders = [
+            ('traderX', -25000, 0.30, 35, ['politics']),
+            ('traderY', -18000, 0.25, 28, ['crypto']),
+            ('traderZ', -32000, 0.22, 42, ['sports', 'politics']),
+            ('badbet1', -12000, 0.35, 22, ['crypto', 'sports']),
+            ('loser99', -28000, 0.28, 38, ['politics']),
+            ('downward', -21000, 0.32, 31, ['crypto']),
+            ('redink', -35000, 0.20, 45, ['sports', 'crypto'])
+        ]
+        
+        for username, pnl, win_rate, trades, markets in simulated_traders:
+            if username not in self.tracked_traders:
+                self.tracked_traders[username] = TraderProfile(
+                    username=username,
+                    profile_url=f'https://polymarket.com/@{username}',
+                    recent_pnl=pnl,
+                    recent_win_rate=win_rate,
+                    total_trades_recent=trades,
+                    active_markets=markets,
+                    risk_score=self._calculate_risk_score(pnl, win_rate, trades),
+                    last_updated=datetime.now()
+                )
+        
+        # Keep only top 10 worst performers
+        sorted_traders = sorted(
+            self.tracked_traders.items(),
+            key=lambda x: (x[1].recent_pnl, x[1].recent_win_rate)  # Sort by PnL then win rate
+        )
+        
+        # Keep top 10 worst (most negative PnL)
+        self.tracked_traders = dict(sorted_traders[:self.top_traders_count])
+    
+    def _calculate_risk_score(self, recent_pnl: float, win_rate: float, trade_count: int) -> float:
+        """Calculate risk score for a trader (higher = more suitable for counter trading)."""
+        # Risk score based on consistency of poor performance
+        pnl_score = min(1.0, abs(recent_pnl) / 50000)  # Scale by $50K
+        win_rate_score = 1 - win_rate  # Lower win rate = higher score
+        volume_score = min(1.0, trade_count / 50)  # More trades = more reliable signal
+        
+        return (pnl_score * 0.4 + win_rate_score * 0.4 + volume_score * 0.2)

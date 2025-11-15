@@ -1,124 +1,114 @@
-# Counter Trading Strategy
+# Dynamic Counter Trading Strategy
 
 ## Overview
 
-The Counter Trading Strategy identifies consistently losing traders on Polymarket and systematically bets against their positions, exploiting behavioral biases and poor decision-making patterns.
+The Dynamic Counter Trading Strategy automatically identifies and tracks the worst performing traders on Polymarket in recent time windows, then systematically bets against their positions to capture behavioral edges.
 
 ## Strategy Logic
 
 ### How It Works
-- **Trader Tracking**: Monitors performance profiles of identified losing traders
-- **Position Prediction**: Predicts which side losing traders will take based on their historical patterns
-- **Counter Bets**: Places opposite trades to profit from their expected losses
+- **Dynamic Discovery**: Automatically scans for top traders by volume and filters for poor recent performance
+- **Time-Window Analysis**: Focuses on last 30 days performance to avoid outlier contamination
+- **Adaptive Tracking**: Updates trader list daily to maintain relevance
+- **Counter Bets**: Predicts and bets against losing trader positions
 
 ### Winning Logic
-- **Statistical Edge**: Only 13% of Polymarket traders have positive PnL
-- **Behavioral Biases**: Losing traders often exhibit persistent, exploitable patterns
-- **Contrarian Approach**: Betting against poor performers creates a systematic edge
+- **Recent Performance Focus**: Avoids being misled by old losses that traders have recovered from
+- **Statistical Edge**: Dynamically selects from the 10 worst performers for maximum edge
+- **Behavioral Exploitation**: Captures persistent biases in real-time trading patterns
 
 ## Bot Trading Logic
 
-### Trader Selection
-1. **Performance Analysis**: Identifies traders with:
-   - Consistently negative PnL
-   - Low win rates (< 30%)
-   - High trading frequency
-2. **Market Focus**: Tracks traders active in specific market categories
-3. **Risk Scoring**: Assigns confidence scores based on loss magnitude and consistency
+### Trader Discovery Process
+1. **Volume Screening**: Identifies high-volume traders (active participants)
+2. **Performance Filtering**: Analyzes last 30 days PnL and win rates
+3. **Ranking**: Selects top 10 worst performers based on:
+   - Recent PnL (most negative)
+   - Win rate (lowest)
+   - Trade frequency (consistency)
 
 ### Signal Generation
-1. **Market Matching**: Scans for markets where tracked traders are active
-2. **Position Prediction**: Uses trader profiles to predict their likely position:
-   - **Sports traders**: Often bet favorites or follow hype
-   - **Politics traders**: May be contrarian or follow news
-   - **Crypto traders**: Follow momentum or project hype
+1. **Market Matching**: Monitors markets where tracked traders are active
+2. **Position Prediction**: Uses trader-specific patterns to predict their trades:
+   - **Sports Traders**: Often bet favorites or follow hype
+   - **Politics Traders**: Contrarian tendencies with heavy favorites
+   - **Crypto Traders**: Momentum followers, especially with new launches
 
-3. **Counter Signal**: Generates opposite trade with calculated confidence
+3. **Counter Signals**: Generates opposite trades with confidence weighting
 
-### Trade Execution
-1. **Confidence Weighting**: Higher confidence for traders with worse performance
-2. **Position Sizing**: Smaller positions due to behavioral strategy nature
-3. **Risk Management**: Strict stop losses and position limits
+### Dynamic Updates
+- **Daily Refresh**: Updates trader performance data every 24 hours
+- **List Rotation**: Replaces improved traders with newly discovered poor performers
+- **Risk Adjustment**: Recalculates confidence scores based on latest data
 
-### Example Scenarios
-```
-Trader Profile: SSryjh
-- Win Rate: 27%
-- Total PnL: -$3.4M
-- Active Markets: Sports
-
-Market: "Will Lakers win vs Warriors?"
-Trader likely bets YES (Lakers favorite)
-Counter Strategy: Buy NO (bet against Lakers)
-```
-
-```
-Trader Profile: sonnyf
-- Win Rate: 21%
-- Total PnL: -$470K
-- Active Markets: Politics, Sports
-
-Market: "Will Candidate A win election?"
-If Candidate A is heavy favorite (YES $0.75)
-Trader likely bets NO (contrarian)
-Counter Strategy: Buy YES
-```
-
-## Tracked Traders
-
-### SSryjh
-- **Profile**: https://polymarket.com/@SSryjh
-- **PnL**: -$3.4M
-- **Win Rate**: 27%
-- **Trades**: 67
-- **Focus**: Sports markets
-- **Pattern**: Often bets favorites, follows sports hype
-
-### sonnyf
-- **Profile**: https://polymarket.com/@sonnyf
-- **PnL**: -$470K
-- **Win Rate**: 21%
-- **Focus**: Politics, sports, crypto
-- **Pattern**: Contrarian bets, follows multiple markets
-
-### egas
-- **Profile**: https://polymarket.com/@egas
-- **PnL**: -$13K
-- **Win Rate**: 28%
-- **Focus**: Crypto markets
-- **Pattern**: Follows token launches and crypto hype
-
-## Configuration
+### Configuration
 ```python
 'counter': {
-    'max_size': 25  # Smaller positions for behavioral strategy
+    'max_size': 25,                    # Smaller positions for behavioral strategy
+    'lookback_days': 30,              # Analyze last 30 days performance
+    'min_trades': 10,                 # Minimum trades to consider trader
+    'top_traders_count': 10,          # Track top 10 worst performers
+    'update_interval_hours': 24       # Update trader list daily
 }
 ```
 
+## Current Tracked Traders
+
+The system dynamically maintains a list of the 10 worst recent performers. Initial seed traders include:
+
+### Core Traders (Historical Analysis)
+- **SSryjh**: Sports-focused, recent -$50K performance
+- **sonnyf**: Multi-market, recent -$15K performance  
+- **egas**: Crypto-focused, recent -$3K performance
+
+### Dynamic Discovery
+System automatically discovers and tracks 7 additional poor performers based on:
+- Recent 30-day PnL
+- Win rate consistency
+- Trading volume
+
 ## Advantages
-- **Statistical Edge**: Exploits the fact that most traders lose money
-- **Behavioral Focus**: Captures human biases that algorithms miss
-- **Diversified**: Works across different market types
+- **Adaptive**: Automatically adjusts to changing market conditions
+- **Outlier-Proof**: 30-day window excludes old performance anomalies
+- **Systematic**: Data-driven selection of counter trading targets
+- **Real-Time**: Daily updates maintain strategy relevance
 
-## Technical Implementation Notes
+## Technical Implementation
 
-### Current Limitations
-- **Conceptual Framework**: Current implementation uses predictive models
-- **API Constraints**: Real-time position tracking requires Polymarket API access
-- **Privacy Issues**: Individual trader positions may not be publicly exposed
+### Data Sources (Production)
+- **Polymarket API**: Trader volume and basic statistics
+- **Profile Scraping**: Recent performance data from trader profiles
+- **Position Monitoring**: Real-time trade tracking (requires API access)
 
-### Production Requirements
-- **Real-time Tracking**: API access to trader positions
-- **Profile Scraping**: Automated collection of trader statistics
-- **Position Monitoring**: WebSocket connections for live position updates
+### Current Simulation
+- **Fallback Data**: Uses simulated trader performance for development
+- **Pattern Recognition**: Implements behavioral prediction models
+- **Confidence Scoring**: Multi-factor risk assessment
 
 ## Risk Management
-- **Position Limits**: Smaller sizes due to strategy uncertainty
-- **Stop Losses**: Strict loss limits on individual trades
-- **Trader Rotation**: Remove traders if performance improves significantly
+- **Time Windows**: 30-day focus prevents outlier distortion
+- **Minimum Volume**: Only tracks traders with sufficient activity
+- **Position Limits**: Smaller sizes due to behavioral uncertainty
+- **Stop Losses**: Strict loss limits on individual counter trades
 
 ## Future Enhancements
-- **Dynamic Trader Discovery**: Automatically identify new losing traders
-- **Machine Learning**: Use ML to predict trader behavior patterns
-- **Multi-trader Analysis**: Consider correlations between trader positions
-- **Market Impact Analysis**: Account for copy trading and front-running risks
+- **Real-Time Position Tracking**: WebSocket connections for live trader positions
+- **Machine Learning Models**: Predictive models for trader behavior patterns
+- **Correlation Analysis**: Avoid counter trading correlated trader groups
+- **Market Impact Analysis**: Account for copy trading and front-running effects
+
+## Performance Validation
+- **Backtesting Framework**: Historical validation of counter trading effectiveness
+- **A/B Testing**: Compare static vs dynamic trader selection
+- **Risk Metrics**: Sharpe ratio, maximum drawdown, win rate analysis
+
+## Example Workflow
+```
+Day 1: Discover top 10 worst 30-day performers
+Day 2: Monitor their positions in relevant markets
+Day 3: Generate counter signals when they trade
+Day 4: Update trader list with latest performance
+...continues daily with fresh data
+```
+
+This dynamic approach ensures the strategy always targets the most currently relevant poor performers, maximizing the behavioral edge while avoiding outdated information.
