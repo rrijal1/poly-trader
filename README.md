@@ -1,18 +1,28 @@
-# Polymarket Price Arbitrage Trader
+# Polymarket Price Arbitrage & BTC Prediction Trader
 
-An automated trading bot for Polymarket prediction markets that exploits price arbitrage opportunities where the sum of YES and NO prices is less than $1.
+An automated trading bot for Polymarket prediction markets that exploits:
+1. **Price Arbitrage**: Places trades on both sides when YES + NO < $1
+2. **BTC Price Prediction**: Detects mispriced Bitcoin markets based on historical volatility patterns
 
 ## Features
 
 - Real-time market data fetching from Polymarket
 - Price arbitrage detection (YES + NO < $1)
+- BTC market mispricing detection using historical data
 - Automated order execution on both sides
 - Risk management and position sizing
 - Dry-run mode for testing
 
-## Strategy
+## Strategies
 
-The bot monitors prediction markets and places orders on both YES and NO outcomes when their combined price is below $1, profiting from the arbitrage opportunity.
+### 1. Price Arbitrage Strategy
+Places trades on both sides of markets where the combined price of YES and NO outcomes is less than $1, guaranteeing profit.
+
+### 2. BTC Price Prediction Strategy
+Specialized strategy for Bitcoin price prediction markets that:
+- Analyzes historical BTC volatility patterns
+- Detects when Polymarket prices don't match actual probability distributions
+- Exploits short-term market inefficiencies (like the 15-minute windows mentioned in X posts)
 
 ## Setup
 
@@ -38,6 +48,13 @@ python -m src.main live --dry-run
 # Live trading (use with caution)
 python -m src.main live
 ```
+
+## Alpha Opportunities
+
+The bot is designed to capture alpha from:
+- Pure arbitrage opportunities (YES + NO < $1)
+- Mispriced BTC markets where implied probabilities don't match historical patterns
+- Short-term market inefficiencies that get corrected quickly
 
 ## Disclaimer
 

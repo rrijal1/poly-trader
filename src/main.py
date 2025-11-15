@@ -40,7 +40,9 @@ logger = logging.getLogger(__name__)
 from .data_collector import DataCollector
 from .risk_manager import RiskManager
 from .order_executor import OrderExecutor
-from strategies.price_arbitrage.arbitrage import PriceArbitrageStrategy, TradeSignal
+from strategies.price_arbitrage.arbitrage import PriceArbitrageStrategy
+from strategies.btc_price_prediction.btc_strategy import BTCPricePredictionStrategy
+from strategies.common import TradeSignal
 
 class PolymarketTrader:
     """Main trader class."""
@@ -56,27 +58,20 @@ class PolymarketTrader:
             'arbitrage': {
                 'threshold': 0.01,  # 1 cent arbitrage opportunity
                 'max_size': 100
+            },
+            'btc': {
+                'mispricing_threshold': 0.05,  # 5% mispricing
+                'arbitrage_threshold': 0.01,   # 1 cent arbitrage
+                'max_size': 50
             }
         }
         
         # Initialize components
         self.data_collector = DataCollector()
         self.arbitrage_strategy = PriceArbitrageStrategy(self.config['arbitrage'])
+        self.btc_strategy = BTCPricePredictionStrategy(self.config.get('btc', {}))
         self.risk_manager = RiskManager(self.config)
         self.order_executor = OrderExecutor(self.data_collector)
-    
-    def run_backtest(self):
-        """Run backtesting."""
-        logger.info("Running backtest...")
-        
-        # Generate synthetic data for testing
-        markets = ['market1', 'market2', 'market3']
-        historical_data = self.backtester.generate_synthetic_data(markets, days=30)
-        
-        results = self.backtester.backtest(historical_data)
-        
-        logger.info(f"Backtest results: {results}")
-        return results
     
     def run_live_trading(self, dry_run: bool = True):
         """
@@ -100,8 +95,10 @@ class PolymarketTrader:
                 # Update existing positions
                 self.risk_manager.update_positions(markets_df)
                 
-                # Generate trading signals
-                signals = self.arbitrage_strategy.analyze_markets(markets_df)
+                # Generate trading signals from both strategies
+                arb_signals = self.arbitrage_strategy.analyze_markets(markets_df)
+                btc_signals = self.btc_strategy.analyze_markets(markets_df)
+                signals = arb_signals + btc_signals
                 
                 if signals:
                     logger.info(f"Generated {len(signals)} arbitrage signals")

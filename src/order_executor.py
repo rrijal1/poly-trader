@@ -34,6 +34,10 @@ class OrderExecutor:
             Order ID if successful, None otherwise
         """
         try:
+            # Handle 'buy_both' action (arbitrage)
+            if signal.action == 'buy_both':
+                return self._execute_arbitrage_orders(signal)
+            
             # Get market data to find token_id
             market_data = self.data_collector.get_market_data(signal.market_id)
             if not market_data:
@@ -61,7 +65,7 @@ class OrderExecutor:
             signed_order = self.client.create_order(order_args)
             
             # Post order
-            response = self.client.post_order(signed_order, orderType=OrderType.GTC)
+            response = self.client.post_order(signed_order, orderType='GTC')
             
             if isinstance(response, dict):
                 order_id = response.get('orderID') or response.get('id')
@@ -76,6 +80,79 @@ class OrderExecutor:
                 
         except Exception as e:
             logger.error(f"Error executing signal {signal}: {e}")
+            return None
+    
+    def _execute_arbitrage_orders(self, signal: TradeSignal) -> Optional[str]:
+        """
+        Execute arbitrage orders (both YES and NO sides).
+        
+        Args:
+            signal: Arbitrage signal
+            
+        Returns:
+            Combined order ID string or None
+        """
+        try:
+            # Get market data
+            market_data = self.data_collector.get_market_data(signal.market_id)
+            if not market_data:
+                logger.error(f"Could not get market data for arbitrage {signal.market_id}")
+                return None
+            
+            # Extract both token IDs
+            yes_token_id = self._extract_token_id(market_data, 'buy_yes')
+            no_token_id = self._extract_token_id(market_data, 'buy_no')
+            
+            if not yes_token_id or not no_token_id:
+                logger.error(f"Could not extract token IDs for arbitrage {signal.market_id}")
+                return None
+            
+            order_ids = []
+            
+            # Place YES order
+            yes_order_args = OrderArgs(
+                price=market_data.get('yes_price', 0),
+                size=signal.size,
+                side=BUY,
+                token_id=yes_token_id
+            )
+            yes_signed = self.client.create_order(yes_order_args)
+            yes_response = self.client.post_order(yes_signed, orderType=OrderType.GTC)
+            if yes_response:
+                if isinstance(yes_response, dict):
+                    yes_order_id = yes_response.get('orderID') or yes_response.get('id')
+                else:
+                    yes_order_id = str(yes_response) if yes_response else None
+                if yes_order_id:
+                    order_ids.append(str(yes_order_id))
+            
+            # Place NO order
+            no_order_args = OrderArgs(
+                price=market_data.get('no_price', 0),
+                size=signal.size,
+                side=BUY,
+                token_id=no_token_id
+            )
+            no_signed = self.client.create_order(no_order_args)
+            no_response = self.client.post_order(no_signed, orderType=OrderType.GTC)
+            if no_response:
+                if isinstance(no_response, dict):
+                    no_order_id = no_response.get('orderID') or no_response.get('id')
+                else:
+                    no_order_id = str(no_response) if no_response else None
+                if no_order_id:
+                    order_ids.append(str(no_order_id))
+            
+            if order_ids:
+                combined_id = ','.join(order_ids)
+                logger.info(f"Executed arbitrage orders {combined_id} for signal {signal}")
+                return combined_id
+            else:
+                logger.error(f"Failed to execute arbitrage orders for {signal}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error executing arbitrage signal {signal}: {e}")
             return None
     
     def _extract_token_id(self, market_data: Any, action: str) -> Optional[str]:

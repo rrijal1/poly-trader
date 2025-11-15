@@ -8,17 +8,9 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from ..common import TradeSignal
 
-@dataclass
-class TradeSignal:
-    """Represents a trading signal."""
-    market_id: str
-    action: str  # 'buy_yes', 'buy_no'
-    price: float
-    size: float
-    reason: str
-    confidence: float  # 0-1
+logger = logging.getLogger(__name__)
 
 class PriceArbitrageStrategy:
     """Arbitrage strategy that places orders on both sides when sum < 1."""
