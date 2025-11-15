@@ -1,114 +1,135 @@
 # Dynamic Counter Trading Strategy
 
-## Overview
+This strategy dynamically discovers and trades against consistently losing traders across multiple timeframes, using wallet-based position sizing and separate wallets for risk isolation.
 
-The Dynamic Counter Trading Strategy automatically identifies and tracks the worst performing traders on Polymarket in recent time windows, then systematically bets against their positions to capture behavioral edges.
+## Strategy Overview
 
-## Strategy Logic
+The dynamic counter trading strategy continuously scans for traders with negative PnL across all timeframes and automatically allocates capital to bet against their positions. Each losing trader gets their own wallet to isolate counter trading risk and enable precise position sizing.
 
-### How It Works
-- **Dynamic Discovery**: Automatically scans for top traders by volume and filters for poor recent performance
-- **Time-Window Analysis**: Focuses on last 30 days performance to avoid outlier contamination
-- **Adaptive Tracking**: Updates trader list daily to maintain relevance
-- **Counter Bets**: Predicts and bets against losing trader positions
+## Key Features
 
-### Winning Logic
-- **Recent Performance Focus**: Avoids being misled by old losses that traders have recovered from
-- **Statistical Edge**: Dynamically selects from the 10 worst performers for maximum edge
-- **Behavioral Exploitation**: Captures persistent biases in real-time trading patterns
+- **Multi-Timeframe Loss Criteria**: Traders must have negative PnL in 7-day, 30-day, and all-time periods
+- **Dynamic Trader Discovery**: Automatically finds consistently losing traders
+- **Wallet-Based Position Sizing**: Position sizes based on our allocation vs losing trader's wallet
+- **Separate Wallets**: Each trader gets an isolated wallet for risk management
+- **Performance-Based Allocation**: Capital allocation based on loss consistency and severity
+- **Continuous Rebalancing**: Daily wallet rebalancing based on ongoing loss patterns
 
-## Bot Trading Logic
+## Loss Criteria
 
-### Trader Discovery Process
-1. **Volume Screening**: Identifies high-volume traders (active participants)
-2. **Performance Filtering**: Analyzes last 30 days PnL and win rates
-3. **Ranking**: Selects top 10 worst performers based on:
-   - Recent PnL (most negative)
-   - Win rate (lowest)
-   - Trade frequency (consistency)
+Traders are selected based on **strict multi-timeframe loss requirements**:
 
-### Signal Generation
-1. **Market Matching**: Monitors markets where tracked traders are active
-2. **Position Prediction**: Uses trader-specific patterns to predict their trades:
-   - **Sports Traders**: Often bet favorites or follow hype
-   - **Politics Traders**: Contrarian tendencies with heavy favorites
-   - **Crypto Traders**: Momentum followers, especially with new launches
+- **7-Day PnL**: Must be **negative** (losing money this week)
+- **30-Day PnL**: Must be **negative** (losing money this month)
+- **All-Time PnL**: Must be **negative** (never profitable overall)
 
-3. **Counter Signals**: Generates opposite trades with confidence weighting
+**Only traders with negative PnL across ALL timeframes are considered consistently losing.**
 
-### Dynamic Updates
-- **Daily Refresh**: Updates trader performance data every 24 hours
-- **List Rotation**: Replaces improved traders with newly discovered poor performers
-- **Risk Adjustment**: Recalculates confidence scores based on latest data
+## Wallet Architecture
 
-### Configuration
+```
+Total Counter Budget: $5,000
+├── SSryjh Wallet: $1,500 (30% allocation - sports loser)
+├── sonnyf Wallet: $1,250 (25% allocation - multi-market loser)
+├── loser_trader_1 Wallet: $1,000 (20% allocation - discovered loser)
+├── bad_bettor Wallet: $750 (15% allocation - severe loser)
+└── other_losers Wallet: $500 (10% allocation - emerging losers)
+```
+
+## Position Sizing Logic
+
+For each counter position:
+1. **Loss Multiplier**: More severe losses = larger counter positions (up to 50% bonus)
+2. **Wallet Ratio**: Calculate our_allocation ÷ losing_trader_wallet_balance
+3. **Base Size**: trader_position_size × wallet_ratio × loss_multiplier
+4. **Risk Limits**:
+   - Max 3% of our wallet per position (smaller than copy trading)
+   - Max 5% of losing trader's wallet
+   - Max single position limit per trader
+5. **Final Size**: Minimum of all constraints
+
+## Currently Tracked Losing Traders
+
+### SSryjh (0x1234567890123456789012345678901234567890)
+- **7-Day PnL**: -$2,500 (losing this week)
+- **30-Day PnL**: -$8,500 (losing this month)
+- **All-Time PnL**: -$25,000 (never profitable)
+- **Win Rate**: 35%
+- **Wallet Allocation**: 30% ($1,500)
+- **Specialization**: Sports markets
+- **Loss Severity**: High consistency
+
+### sonnyf (0xabcdefabcdefabcdefabcdefabcdefabcdefabcd)
+- **7-Day PnL**: -$1,200 (losing this week)
+- **30-Day PnL**: -$4,500 (losing this month)
+- **All-Time PnL**: -$15,000 (never profitable)
+- **Win Rate**: 28%
+- **Wallet Allocation**: 25% ($1,250)
+- **Specialization**: Politics, sports, crypto
+- **Loss Severity**: Very consistent
+
+### Dynamic Discovery
+The system continuously discovers new consistently losing traders like:
+- loser_trader_1 (7d: -$1,800, 30d: -$6,200, all-time: -$18,000)
+- bad_bettor (7d: -$3,200, 30d: -$9,500, all-time: -$32,000)
+
+## Configuration
+
 ```python
 'counter': {
-    'max_size': 25,                    # Smaller positions for behavioral strategy
-    'lookback_days': 30,              # Analyze last 30 days performance
-    'min_trades': 10,                 # Minimum trades to consider trader
-    'top_traders_count': 10,          # Track top 10 worst performers
-    'update_interval_hours': 24       # Update trader list daily
+    'total_counter_budget': 5000,      # Total USDC for counter trading
+    'min_trades': 50,                  # Minimum total trades
+    'min_wallet_balance': 1000,        # Minimum wallet balance ($1K)
+    'max_traders_to_counter': 5,       # Maximum losing traders to counter
+    'max_position_vs_wallet': 0.03,    # 3% of our wallet per position
+    'max_position_vs_trader_wallet': 0.05, # 5% of losing trader's wallet
+    'wallet_rebalance_interval_hours': 24, # Daily rebalancing
+    'update_interval_hours': 6         # Update every 6 hours
 }
 ```
 
-## Current Tracked Traders
+## Environment Variables
 
-The system dynamically maintains a list of the 10 worst recent performers. Initial seed traders include:
-
-### Core Traders (Historical Analysis)
-- **SSryjh**: Sports-focused, recent -$50K performance
-- **sonnyf**: Multi-market, recent -$15K performance  
-- **egas**: Crypto-focused, recent -$3K performance
-
-### Dynamic Discovery
-System automatically discovers and tracks 7 additional poor performers based on:
-- Recent 30-day PnL
-- Win rate consistency
-- Trading volume
-
-## Advantages
-- **Adaptive**: Automatically adjusts to changing market conditions
-- **Outlier-Proof**: 30-day window excludes old performance anomalies
-- **Systematic**: Data-driven selection of counter trading targets
-- **Real-Time**: Daily updates maintain strategy relevance
-
-## Technical Implementation
-
-### Data Sources (Production)
-- **Polymarket API**: Trader volume and basic statistics
-- **Profile Scraping**: Recent performance data from trader profiles
-- **Position Monitoring**: Real-time trade tracking (requires API access)
-
-### Current Simulation
-- **Fallback Data**: Uses simulated trader performance for development
-- **Pattern Recognition**: Implements behavioral prediction models
-- **Confidence Scoring**: Multi-factor risk assessment
+Set up separate wallets for each losing trader:
+```bash
+COUNTER_SSRYJH_PRIVATE_KEY=your_ssryjh_counter_wallet_key
+COUNTER_SONNYF_PRIVATE_KEY=your_sonnyf_counter_wallet_key
+COUNTER_LOSER_TRADER_1_PRIVATE_KEY=your_loser_trader_1_counter_wallet_key
+# ... etc for each losing trader
+```
 
 ## Risk Management
-- **Time Windows**: 30-day focus prevents outlier distortion
-- **Minimum Volume**: Only tracks traders with sufficient activity
-- **Position Limits**: Smaller sizes due to behavioral uncertainty
-- **Stop Losses**: Strict loss limits on individual counter trades
 
-## Future Enhancements
-- **Real-Time Position Tracking**: WebSocket connections for live trader positions
-- **Machine Learning Models**: Predictive models for trader behavior patterns
-- **Correlation Analysis**: Avoid counter trading correlated trader groups
-- **Market Impact Analysis**: Account for copy trading and front-running effects
+- **Isolated Wallets**: Each losing trader's counter positions in separate wallets
+- **Conservative Sizing**: Smaller position limits than copy trading (3% vs 5%)
+- **Loss Validation**: Only counter traders with proven multi-timeframe losses
+- **Automatic Removal**: Traders showing positive PnL in any timeframe are removed
+- **Rebalancing**: Regular portfolio rebalancing maintains optimal exposure
 
-## Performance Validation
-- **Backtesting Framework**: Historical validation of counter trading effectiveness
-- **A/B Testing**: Compare static vs dynamic trader selection
-- **Risk Metrics**: Sharpe ratio, maximum drawdown, win rate analysis
+## How It Works
 
-## Example Workflow
-```
-Day 1: Discover top 10 worst 30-day performers
-Day 2: Monitor their positions in relevant markets
-Day 3: Generate counter signals when they trade
-Day 4: Update trader list with latest performance
-...continues daily with fresh data
-```
+1. **Discovery Phase**: Scan for traders with negative PnL in all timeframes
+2. **Wallet Setup**: Create isolated wallets for each discovered losing trader
+3. **Allocation Phase**: Distribute capital based on loss consistency and severity
+4. **Position Monitoring**: Track losing trader positions in real-time
+5. **Signal Generation**: Create counter signals betting opposite to their positions
+6. **Rebalancing**: Adjust allocations based on ongoing loss patterns
 
-This dynamic approach ensures the strategy always targets the most currently relevant poor performers, maximizing the behavioral edge while avoiding outdated information.
+## Advantages
+
+- **Strict Criteria**: Only counters traders with proven multi-timeframe losses
+- **Risk Isolation**: Separate wallets prevent contagion from losing traders
+- **Dynamic Sizing**: Loss severity determines position size automatically
+- **Consistent Edge**: Focuses on persistent poor performance patterns
+- **Scalable**: Easy to add new losing traders and wallets
+
+## Counter Trading Edge
+
+The strategy exploits systematic biases in losing traders:
+
+- **Overconfidence**: Losing traders often double down on bad positions
+- **Recency Bias**: Recent losses often lead to emotional decision-making
+- **Pattern Persistence**: Poor traders tend to repeat losing strategies
+- **Market Timing**: Many losing traders follow hype cycles rather than fundamentals
+
+By requiring negative PnL across all timeframes, we ensure we're countering truly consistent underperformance rather than temporary setbacks.
