@@ -1,10 +1,11 @@
-# Polymarket Price Arbitrage & BTC Prediction Trader
+# Polymarket Multi-Strategy Automated Trader
 
-An automated trading bot for Polymarket prediction markets that exploits:
+An automated trading bot for Polymarket prediction markets that exploits multiple alpha sources:
 
 1. **Price Arbitrage**: Places trades on both sides when YES + NO < $1
 2. **BTC Price Prediction**: Detects mispriced Bitcoin markets based on historical volatility patterns
 3. **Counter Trading**: Bets against consistently losing traders to capture behavioral edges
+4. **Copy Trading**: Follows successful traders and replicates their positions with risk management
 
 ## Features
 
@@ -36,6 +37,15 @@ Behavioral strategy that profits from the consistent mistakes of losing traders:
 - Tracks performance of identified poor-performing traders
 - Bets against their positions when they trade
 - Exploits persistent biases and poor decision-making patterns
+
+### 4. Copy Trading Strategy
+
+Follows successful traders and replicates their positions with conservative risk management:
+
+- Tracks proven traders with high win rates and significant PnL
+- Copies their positions with smaller sizes (3-5% of their position)
+- Currently following: **cqs** (74.3% win rate, $464K+ PnL)
+- Risk-managed approach to leverage expert trader insights
 
 ## Setup
 
@@ -69,6 +79,7 @@ The bot is designed to capture alpha from:
 - Pure arbitrage opportunities (YES + NO < $1)
 - Mispriced BTC markets where implied probabilities don't match historical patterns
 - Behavioral edges from counter trading consistently losing traders
+- Expert insights by following successful traders like cqs
 - Short-term market inefficiencies that get corrected quickly
 
 ## Disclaimer

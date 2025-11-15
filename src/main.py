@@ -43,6 +43,7 @@ from .order_executor import OrderExecutor
 from strategies.price_arbitrage.arbitrage import PriceArbitrageStrategy
 from strategies.btc_price_prediction.btc_strategy import BTCPricePredictionStrategy
 from strategies.counter_trading.counter_strategy import CounterTradingStrategy
+from strategies.copy_trading.copy_strategy import CopyTradingStrategy
 from strategies.common import TradeSignal
 
 class PolymarketTrader:
@@ -71,6 +72,13 @@ class PolymarketTrader:
                 'min_trades': 10,  # Minimum trades to consider trader
                 'top_traders_count': 10,  # Track top 10 worst performers
                 'update_interval_hours': 24  # Update trader list daily
+            },
+            'copy': {
+                'max_copy_size': 10,  # Maximum position size to copy
+                'risk_multiplier': 0.05,  # 5% of trader's position size
+                'min_win_rate': 0.6,  # Minimum 60% win rate
+                'min_trades': 50,  # Minimum trades to consider
+                'update_interval_hours': 24  # Update trader stats daily
             }
         }
         
@@ -79,6 +87,7 @@ class PolymarketTrader:
         self.arbitrage_strategy = PriceArbitrageStrategy(self.config['arbitrage'])
         self.btc_strategy = BTCPricePredictionStrategy(self.config.get('btc', {}))
         self.counter_strategy = CounterTradingStrategy(self.config.get('counter', {}))
+        self.copy_strategy = CopyTradingStrategy(self.config.get('copy', {}))
         self.risk_manager = RiskManager(self.config)
         self.order_executor = OrderExecutor(self.data_collector)
     
@@ -108,7 +117,8 @@ class PolymarketTrader:
                 arb_signals = self.arbitrage_strategy.analyze_markets(markets_df)
                 btc_signals = self.btc_strategy.analyze_markets(markets_df)
                 counter_signals = self.counter_strategy.analyze_markets(markets_df)
-                signals = arb_signals + btc_signals + counter_signals
+                copy_signals = self.copy_strategy.analyze_markets(markets_df)
+                signals = arb_signals + btc_signals + counter_signals + copy_signals
                 
                 if signals:
                     logger.info(f"Generated {len(signals)} arbitrage signals")
