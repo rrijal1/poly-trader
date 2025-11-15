@@ -1,6 +1,6 @@
 """
 Copy Trading Strategy
-Follow successful traders and replicate their positions with smaller sizes.
+Dynamic trader discovery and wallet-based position sizing for following successful traders.
 """
 
 import logging
@@ -9,107 +9,325 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import os
 
 from ..common import TradeSignal
 
 logger = logging.getLogger(__name__)
 
 @dataclass
-class SuccessfulTraderProfile:
-    """Profile of a successful trader to copy."""
-    username: str
+class DynamicTraderProfile:
+    """Dynamic profile of a trader discovered through performance analysis."""
     address: str
+    username: str
     profile_url: str
-    win_rate: float
-    total_pnl: float
-    total_trades: int
-    active_markets: List[str]
-    risk_multiplier: float  # How much to scale their positions (0.1 = 10% of their size)
-    last_updated: datetime
-    confidence_score: float  # 0-1 based on consistency and performance
 
-class CopyTradingStrategy:
+    # Performance metrics (last 50 days)
+    recent_win_rate: float  # Win rate over last 50 days
+    recent_pnl: float  # PnL over last 50 days
+    recent_trades: int  # Number of trades in last 50 days
+    avg_trade_size: float  # Average position size
+    wallet_balance: float  # Current wallet balance (USDC)
+
+    # Risk and confidence metrics
+    consistency_score: float  # 0-1, how consistent their performance is
+    risk_adjusted_return: float  # Sharpe-like ratio for recent performance
+    market_specialization: List[str]  # Markets they perform best in
+
+    # Copy trading parameters
+    wallet_allocation: float  # How much of our total copy wallet to allocate to this trader
+    max_single_position: float  # Maximum size for any single copied position
+    last_updated: datetime
+
+    # Wallet for this trader
+    wallet_private_key: str  # Separate wallet for this trader's positions
+
+@dataclass
+class WalletConfig:
+    """Configuration for a strategy-specific wallet."""
+    strategy_name: str
+    trader_address: str
+    private_key: str
+    total_allocation: float  # Total USDC allocated to this wallet
+    available_balance: float  # Current available balance
+
+class DynamicCopyTradingStrategy:
     """
-    Copy trading strategy that follows successful traders' positions.
-    Replicates their trades with smaller position sizes for risk management.
+    Dynamic copy trading strategy that discovers and follows successful traders.
+
+    Features:
+    - Dynamic trader discovery based on 50-day performance
+    - Wallet-based position sizing (our allocation vs trader's wallet)
+    - Separate wallets for each trader to isolate risk
+    - Continuous performance monitoring and rebalancing
     """
 
     def __init__(self, config: Dict):
         self.config = config
-        self.max_copy_size = config.get('max_copy_size', 10)  # Maximum size to copy
-        self.risk_multiplier = config.get('risk_multiplier', 0.05)  # 5% of their position size
-        self.min_win_rate = config.get('min_win_rate', 0.6)  # Minimum 60% win rate
-        self.min_trades = config.get('min_trades', 50)  # Minimum trades to consider
-        self.update_interval_hours = config.get('update_interval_hours', 24)  # Update daily
 
-        # Successful trader tracking
-        self.tracked_traders: Dict[str, SuccessfulTraderProfile] = {}
+        # Performance tracking parameters
+        self.performance_window_days = config.get('performance_window_days', 50)
+        self.min_recent_trades = config.get('min_recent_trades', 20)
+        self.min_recent_win_rate = config.get('min_recent_win_rate', 0.65)  # 65%
+        self.min_recent_pnl = config.get('min_recent_pnl', 1000)  # $1K minimum
+
+        # Wallet and sizing parameters
+        self.total_copy_budget = config.get('total_copy_budget', 10000)  # Total USDC for copy trading
+        self.max_traders_to_follow = config.get('max_traders_to_follow', 5)
+        self.wallet_rebalance_interval_hours = config.get('wallet_rebalance_interval_hours', 24)
+
+        # Risk management
+        self.max_position_vs_wallet = config.get('max_position_vs_wallet', 0.05)  # 5% of our wallet per position
+        self.max_position_vs_trader_wallet = config.get('max_position_vs_trader_wallet', 0.1)  # 10% of trader's wallet
+        self.update_interval_hours = config.get('update_interval_hours', 6)  # Update every 6 hours
+
+        # Dynamic trader tracking
+        self.discovered_traders: Dict[str, DynamicTraderProfile] = {}
+        self.wallet_configs: Dict[str, WalletConfig] = {}
         self.last_update = None
+        self.last_wallet_rebalance = None
 
-        # Initialize with known successful traders
-        self._initialize_successful_traders()
+        # Initialize with seed traders and wallets
+        self._initialize_seed_traders()
 
-    def _initialize_successful_traders(self):
-        """Initialize with known successful traders."""
-        self.tracked_traders = {
-            'cqs': SuccessfulTraderProfile(
-                username='cqs',
-                address='0xdfe3fedc5c7679be42c3d393e99d4b55247b73c4',
-                profile_url='https://polymarket.com/@cqs?via=qwerty',
-                win_rate=0.743,  # 74.3%
-                total_pnl=464844,  # $464,844
-                total_trades=224,
-                active_markets=['politics', 'elections', 'us-politics'],
-                risk_multiplier=0.03,  # Conservative 3% of their position size
-                last_updated=datetime.now(),
-                confidence_score=0.85  # High confidence based on track record
-            )
+    def _initialize_seed_traders(self):
+        """Initialize with known successful traders as seeds for discovery."""
+        seed_traders = {
+            'cqs': {
+                'address': '0xdfe3fedc5c7679be42c3d393e99d4b55247b73c4',
+                'username': 'cqs',
+                'profile_url': 'https://polymarket.com/@cqs?via=qwerty',
+                'estimated_wallet_balance': 500000,  # Estimated based on PnL
+                'wallet_allocation': 0.4,  # 40% of copy budget
+            }
         }
 
-        logger.info(f"Initialized copy trading with {len(self.tracked_traders)} successful traders")
+        for trader_key, trader_data in seed_traders.items():
+            # Create wallet for this trader
+            wallet_key = f"COPY_{trader_key.upper()}_PRIVATE_KEY"
+            wallet_private_key = os.getenv(wallet_key, "")
+
+            if not wallet_private_key:
+                logger.warning(f"No wallet configured for trader {trader_key}. Set {wallet_key} in environment.")
+                continue
+
+            # Initialize trader profile
+            trader_profile = DynamicTraderProfile(
+                address=trader_data['address'],
+                username=trader_data['username'],
+                profile_url=trader_data['profile_url'],
+                recent_win_rate=0.743,  # Will be updated dynamically
+                recent_pnl=464844,
+                recent_trades=224,
+                avg_trade_size=2000,  # Estimated
+                wallet_balance=trader_data['estimated_wallet_balance'],
+                consistency_score=0.85,
+                risk_adjusted_return=2.1,
+                market_specialization=['politics', 'elections', 'us-politics'],
+                wallet_allocation=trader_data['wallet_allocation'],
+                max_single_position=self.total_copy_budget * trader_data['wallet_allocation'] * self.max_position_vs_wallet,
+                last_updated=datetime.now(),
+                wallet_private_key=wallet_private_key
+            )
+
+            self.discovered_traders[trader_key] = trader_profile
+
+            # Create wallet config
+            wallet_config = WalletConfig(
+                strategy_name='copy_trading',
+                trader_address=trader_data['address'],
+                private_key=wallet_private_key,
+                total_allocation=self.total_copy_budget * trader_data['wallet_allocation'],
+                available_balance=self.total_copy_budget * trader_data['wallet_allocation']  # Assume full balance initially
+            )
+
+            self.wallet_configs[trader_key] = wallet_config
+
+        logger.info(f"Initialized dynamic copy trading with {len(self.discovered_traders)} seed traders")
 
     def _should_update_traders(self) -> bool:
-        """Check if trader list should be updated."""
+        """Check if trader performance should be updated."""
         if self.last_update is None:
             return True
         return (datetime.now() - self.last_update) > timedelta(hours=self.update_interval_hours)
 
-    def _update_trader_profiles(self):
-        """Update trader profiles with latest performance data."""
-        # In production, this would fetch real-time data from Polymarket API
-        # For now, we'll use static data with periodic updates
-        logger.info("Updating successful trader profiles...")
+    def _should_rebalance_wallets(self) -> bool:
+        """Check if wallets should be rebalanced."""
+        if self.last_wallet_rebalance is None:
+            return True
+        return (datetime.now() - self.last_wallet_rebalance) > timedelta(hours=self.wallet_rebalance_interval_hours)
 
-        # Update last update time
+    def _discover_new_traders(self):
+        """
+        Discover new profitable traders based on recent performance.
+        In production, this would query Polymarket API for trader leaderboards.
+        """
+        logger.info("Discovering new profitable traders...")
+
+        # Mock discovery process - in reality would scan Polymarket trader data
+        # This would involve:
+        # 1. Querying trader performance APIs
+        # 2. Analyzing 50-day performance metrics
+        # 3. Filtering for consistency and profitability
+        # 4. Ranking by risk-adjusted returns
+
+        mock_discovered_traders = [
+            {
+                'address': '0x1234567890123456789012345678901234567890',
+                'username': 'trader_alpha',
+                'profile_url': 'https://polymarket.com/@trader_alpha',
+                'recent_win_rate': 0.71,
+                'recent_pnl': 125000,
+                'recent_trades': 89,
+                'avg_trade_size': 1500,
+                'wallet_balance': 200000,
+                'consistency_score': 0.78,
+                'risk_adjusted_return': 1.8,
+                'market_specialization': ['crypto', 'defi'],
+            }
+        ]
+
+        for trader_data in mock_discovered_traders:
+            trader_key = trader_data['username']
+
+            # Skip if already tracking
+            if trader_key in self.discovered_traders:
+                continue
+
+            # Check if meets criteria
+            if (trader_data['recent_win_rate'] >= self.min_recent_win_rate and
+                trader_data['recent_pnl'] >= self.min_recent_pnl and
+                trader_data['recent_trades'] >= self.min_recent_trades):
+
+                # Create wallet for new trader
+                wallet_key = f"COPY_{trader_key.upper()}_PRIVATE_KEY"
+                wallet_private_key = os.getenv(wallet_key, "")
+
+                if not wallet_private_key:
+                    logger.warning(f"No wallet configured for discovered trader {trader_key}. Skipping.")
+                    continue
+
+                # Calculate wallet allocation (distribute remaining budget)
+                remaining_allocation = 1.0 - sum(t.wallet_allocation for t in self.discovered_traders.values())
+                new_allocation = min(remaining_allocation / 2, 0.15)  # Max 15% for new traders
+
+                trader_profile = DynamicTraderProfile(
+                    address=trader_data['address'],
+                    username=trader_data['username'],
+                    profile_url=trader_data['profile_url'],
+                    recent_win_rate=trader_data['recent_win_rate'],
+                    recent_pnl=trader_data['recent_pnl'],
+                    recent_trades=trader_data['recent_trades'],
+                    avg_trade_size=trader_data['avg_trade_size'],
+                    wallet_balance=trader_data['wallet_balance'],
+                    consistency_score=trader_data['consistency_score'],
+                    risk_adjusted_return=trader_data['risk_adjusted_return'],
+                    market_specialization=trader_data['market_specialization'],
+                    wallet_allocation=new_allocation,
+                    max_single_position=self.total_copy_budget * new_allocation * self.max_position_vs_wallet,
+                    last_updated=datetime.now(),
+                    wallet_private_key=wallet_private_key
+                )
+
+                self.discovered_traders[trader_key] = trader_profile
+
+                # Create wallet config
+                wallet_config = WalletConfig(
+                    strategy_name='copy_trading',
+                    trader_address=trader_data['address'],
+                    private_key=wallet_private_key,
+                    total_allocation=self.total_copy_budget * new_allocation,
+                    available_balance=self.total_copy_budget * new_allocation
+                )
+
+                self.wallet_configs[trader_key] = wallet_config
+
+                logger.info(f"Discovered and added new trader: {trader_key} ({trader_data['recent_win_rate']:.1%} win rate)")
+
+        # Remove underperforming traders
+        traders_to_remove = []
+        for trader_key, trader in self.discovered_traders.items():
+            if trader.recent_win_rate < self.min_recent_win_rate or trader.recent_pnl < self.min_recent_pnl:
+                traders_to_remove.append(trader_key)
+
+        for trader_key in traders_to_remove:
+            del self.discovered_traders[trader_key]
+            if trader_key in self.wallet_configs:
+                del self.wallet_configs[trader_key]
+            logger.info(f"Removed underperforming trader: {trader_key}")
+
         self.last_update = datetime.now()
 
-        # Could add logic here to fetch updated stats from Polymarket
-        # For now, we maintain the static profiles
+    def _update_trader_performance(self):
+        """Update performance metrics for tracked traders."""
+        logger.info("Updating trader performance metrics...")
+
+        # In production, this would fetch latest 50-day performance data
+        # For now, we'll simulate performance updates
+
+        for trader_key, trader in self.discovered_traders.items():
+            # Simulate slight performance changes
+            trader.recent_win_rate = np.clip(trader.recent_win_rate + np.random.normal(0, 0.02), 0.5, 0.95)
+            trader.recent_pnl *= (1 + np.random.normal(0, 0.05))  # 5% volatility
+            trader.consistency_score = min(trader.consistency_score + 0.01, 1.0)
+            trader.last_updated = datetime.now()
+
+    def _calculate_dynamic_position_size(self, trader: DynamicTraderProfile, trader_position_size: float) -> float:
+        """
+        Calculate position size based on wallet allocation ratios.
+
+        Args:
+            trader: The trader profile
+            trader_position_size: Size of the trader's position
+
+        Returns:
+            Recommended position size for copying
+        """
+        # Get our wallet allocation for this trader
+        our_wallet_allocation = self.wallet_configs[trader.username].available_balance
+
+        # Calculate based on wallet ratio: (our_allocation / trader_wallet) * trader_position
+        wallet_ratio = our_wallet_allocation / trader.wallet_balance
+        wallet_based_size = trader_position_size * wallet_ratio
+
+        # Apply risk limits
+        max_vs_our_wallet = our_wallet_allocation * self.max_position_vs_wallet
+        max_vs_trader_wallet = trader.wallet_balance * self.max_position_vs_trader_wallet
+
+        # Take the minimum of all constraints
+        recommended_size = min(
+            wallet_based_size,
+            max_vs_our_wallet,
+            max_vs_trader_wallet,
+            trader.max_single_position
+        )
+
+        return max(recommended_size, 0)  # Ensure non-negative
 
     def _get_trader_positions(self, trader_address: str) -> List[Dict]:
         """
         Get current positions for a trader.
         In production, this would query Polymarket API for trader's open positions.
         """
-        # Mock positions for demonstration - in reality would fetch from API
-        # This is where we'd integrate with Polymarket's trader position API
-
+        # Mock positions - in reality would fetch from API
         mock_positions = [
             {
                 'market_id': 'politics_market_1',
                 'outcome': 'YES',
-                'size': 1000,
-                'entry_price': 0.45,
-                'current_price': 0.52,
-                'pnl': 70
+                'size': 2500,  # Larger position for successful trader
+                'entry_price': 0.42,
+                'current_price': 0.48,
+                'pnl': 150,
+                'timestamp': datetime.now() - timedelta(hours=2)
             },
             {
-                'market_id': 'election_market_1',
+                'market_id': 'crypto_market_1',
                 'outcome': 'NO',
-                'size': 500,
-                'entry_price': 0.38,
-                'current_price': 0.41,
-                'pnl': 15
+                'size': 1800,
+                'entry_price': 0.35,
+                'current_price': 0.39,
+                'pnl': 72,
+                'timestamp': datetime.now() - timedelta(hours=4)
             }
         ]
 
@@ -117,7 +335,7 @@ class CopyTradingStrategy:
 
     def analyze_markets(self, markets_df: pd.DataFrame) -> List[TradeSignal]:
         """
-        Analyze markets and generate copy trading signals.
+        Analyze markets and generate dynamic copy trading signals.
 
         Args:
             markets_df: DataFrame with market data
@@ -127,15 +345,17 @@ class CopyTradingStrategy:
         """
         signals = []
 
-        # Update trader profiles if needed
+        # Update trader discovery and performance if needed
         if self._should_update_traders():
-            self._update_trader_profiles()
+            self._discover_new_traders()
+            self._update_trader_performance()
 
-        # Check each tracked trader
-        for trader_key, trader in self.tracked_traders.items():
-            if trader.win_rate < self.min_win_rate or trader.total_trades < self.min_trades:
-                continue
+        # Rebalance wallets if needed
+        if self._should_rebalance_wallets():
+            self._rebalance_wallets()
 
+        # Generate signals for each tracked trader
+        for trader_key, trader in self.discovered_traders.items():
             try:
                 # Get trader's current positions
                 positions = self._get_trader_positions(trader.address)
@@ -148,32 +368,40 @@ class CopyTradingStrategy:
 
                     market = market_data.iloc[0]
 
-                    # Calculate copy position size
-                    copy_size = min(
-                        position['size'] * trader.risk_multiplier,
-                        self.max_copy_size
+                    # Calculate dynamic position size based on wallet ratios
+                    copy_size = self._calculate_dynamic_position_size(trader, position['size'])
+
+                    # Skip if position too small
+                    if copy_size < 10:  # Minimum $10 position
+                        continue
+
+                    # Only copy recent positions (within last 24 hours)
+                    position_age = datetime.now() - position['timestamp']
+                    if position_age > timedelta(hours=24):
+                        continue
+
+                    # Determine action based on their position
+                    action = f"buy_{position['outcome'].lower()}"
+
+                    # Calculate confidence based on trader's recent performance
+                    confidence = (
+                        trader.recent_win_rate * 0.4 +
+                        trader.consistency_score * 0.3 +
+                        (position['pnl'] / max(position['size'] * position['entry_price'], 1)) * 0.3
+                    )
+                    confidence = min(confidence, 0.95)
+
+                    signal = TradeSignal(
+                        market_id=position['market_id'],
+                        action=action,
+                        price=market.get('best_bid', position['current_price']),
+                        size=copy_size,
+                        reason=f"Dynamic copy: {trader.username} ({trader.recent_win_rate:.1%} win rate, wallet ratio: {self.wallet_configs[trader_key].available_balance/trader.wallet_balance:.2%})",
+                        confidence=confidence
                     )
 
-                    # Only copy if position is profitable or at good entry
-                    if position['pnl'] > 0 or position['entry_price'] < 0.4:
-                        # Determine action based on their position
-                        action = f"buy_{position['outcome'].lower()}"
-
-                        # Calculate confidence based on trader's win rate and position performance
-                        confidence = trader.confidence_score * (1 + position['pnl'] / 100)  # Boost if position is up
-                        confidence = min(confidence, 0.95)  # Cap at 95%
-
-                        signal = TradeSignal(
-                            market_id=position['market_id'],
-                            action=action,
-                            price=market.get('best_bid', position['current_price']),  # Use market price
-                            size=copy_size,
-                            reason=f"Copying {trader.username} ({trader.win_rate:.1%} win rate) position",
-                            confidence=confidence
-                        )
-
-                        signals.append(signal)
-                        logger.info(f"Generated copy signal for {trader.username}: {signal}")
+                    signals.append(signal)
+                    logger.info(f"Generated dynamic copy signal for {trader.username}: ${copy_size:.0f} position")
 
             except Exception as e:
                 logger.error(f"Error analyzing positions for trader {trader.username}: {e}")
@@ -181,19 +409,58 @@ class CopyTradingStrategy:
 
         return signals
 
-    def get_tracked_traders_summary(self) -> Dict:
-        """Get summary of tracked successful traders."""
+    def _rebalance_wallets(self):
+        """Rebalance wallet allocations based on trader performance."""
+        logger.info("Rebalancing wallet allocations...")
+
+        # Calculate new allocations based on recent performance
+        total_weight = sum(trader.risk_adjusted_return for trader in self.discovered_traders.values())
+
+        for trader_key, trader in self.discovered_traders.items():
+            if total_weight > 0:
+                # Allocate based on risk-adjusted return
+                new_allocation = trader.risk_adjusted_return / total_weight
+                new_allocation = np.clip(new_allocation, 0.05, 0.4)  # Min 5%, max 40%
+            else:
+                new_allocation = 1.0 / len(self.discovered_traders)
+
+            trader.wallet_allocation = new_allocation
+            trader.max_single_position = self.total_copy_budget * new_allocation * self.max_position_vs_wallet
+
+            # Update wallet config
+            self.wallet_configs[trader_key].total_allocation = self.total_copy_budget * new_allocation
+
+        self.last_wallet_rebalance = datetime.now()
+        logger.info("Wallet rebalancing completed")
+
+    def get_strategy_summary(self) -> Dict:
+        """Get comprehensive summary of the dynamic copy trading strategy."""
         return {
-            'total_traders': len(self.tracked_traders),
+            'strategy_type': 'dynamic_copy_trading',
+            'total_traders_tracked': len(self.discovered_traders),
+            'total_copy_budget': self.total_copy_budget,
+            'performance_window_days': self.performance_window_days,
             'traders': [
                 {
                     'username': t.username,
-                    'win_rate': t.win_rate,
-                    'total_pnl': t.total_pnl,
-                    'total_trades': t.total_trades,
-                    'confidence_score': t.confidence_score
+                    'address': t.address,
+                    'recent_win_rate': t.recent_win_rate,
+                    'recent_pnl': t.recent_pnl,
+                    'wallet_allocation': t.wallet_allocation,
+                    'wallet_balance_ratio': self.wallet_configs[t.username].available_balance / t.wallet_balance if t.username in self.wallet_configs else 0,
+                    'consistency_score': t.consistency_score,
+                    'market_specialization': t.market_specialization
                 }
-                for t in self.tracked_traders.values()
+                for t in self.discovered_traders.values()
             ],
-            'last_update': self.last_update.isoformat() if self.last_update else None
+            'wallet_configs': [
+                {
+                    'trader': trader_key,
+                    'total_allocation': config.total_allocation,
+                    'available_balance': config.available_balance
+                }
+                for trader_key, config in self.wallet_configs.items()
+            ],
+            'last_update': self.last_update.isoformat() if self.last_update else None,
+            'last_wallet_rebalance': self.last_wallet_rebalance.isoformat() if self.last_wallet_rebalance else None
         }

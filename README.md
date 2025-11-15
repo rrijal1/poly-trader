@@ -5,7 +5,7 @@ An automated trading bot for Polymarket prediction markets that exploits multipl
 1. **Price Arbitrage**: Places trades on both sides when YES + NO < $1
 2. **BTC Price Prediction**: Detects mispriced Bitcoin markets based on historical volatility patterns
 3. **Counter Trading**: Bets against consistently losing traders to capture behavioral edges
-4. **Copy Trading**: Follows successful traders and replicates their positions with risk management
+4. **Copy Trading**: Dynamic discovery and following of successful traders with wallet-based position sizing
 
 ## Features
 
@@ -79,8 +79,9 @@ The bot is designed to capture alpha from:
 - Pure arbitrage opportunities (YES + NO < $1)
 - Mispriced BTC markets where implied probabilities don't match historical patterns
 - Behavioral edges from counter trading consistently losing traders
-- Expert insights by following successful traders like cqs
+- Expert insights by dynamically following top-performing traders
 - Short-term market inefficiencies that get corrected quickly
+- Multi-wallet risk isolation for strategy-specific capital allocation
 
 ## Disclaimer
 

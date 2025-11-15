@@ -43,7 +43,7 @@ from .order_executor import OrderExecutor
 from strategies.price_arbitrage.arbitrage import PriceArbitrageStrategy
 from strategies.btc_price_prediction.btc_strategy import BTCPricePredictionStrategy
 from strategies.counter_trading.counter_strategy import CounterTradingStrategy
-from strategies.copy_trading.copy_strategy import CopyTradingStrategy
+from strategies.copy_trading.copy_strategy import DynamicCopyTradingStrategy
 from strategies.common import TradeSignal
 
 class PolymarketTrader:
@@ -74,11 +74,16 @@ class PolymarketTrader:
                 'update_interval_hours': 24  # Update trader list daily
             },
             'copy': {
-                'max_copy_size': 10,  # Maximum position size to copy
-                'risk_multiplier': 0.05,  # 5% of trader's position size
-                'min_win_rate': 0.6,  # Minimum 60% win rate
-                'min_trades': 50,  # Minimum trades to consider
-                'update_interval_hours': 24  # Update trader stats daily
+                'total_copy_budget': 10000,  # Total USDC allocated to copy trading
+                'performance_window_days': 50,  # Analyze last 50 days performance
+                'min_recent_trades': 20,  # Minimum trades in last 50 days
+                'min_recent_win_rate': 0.65,  # Minimum 65% win rate
+                'min_recent_pnl': 1000,  # Minimum $1K PnL in last 50 days
+                'max_traders_to_follow': 5,  # Maximum traders to track
+                'max_position_vs_wallet': 0.05,  # 5% of our wallet per position
+                'max_position_vs_trader_wallet': 0.1,  # 10% of trader's wallet
+                'wallet_rebalance_interval_hours': 24,  # Rebalance daily
+                'update_interval_hours': 6  # Update trader data every 6 hours
             }
         }
         
@@ -87,7 +92,7 @@ class PolymarketTrader:
         self.arbitrage_strategy = PriceArbitrageStrategy(self.config['arbitrage'])
         self.btc_strategy = BTCPricePredictionStrategy(self.config.get('btc', {}))
         self.counter_strategy = CounterTradingStrategy(self.config.get('counter', {}))
-        self.copy_strategy = CopyTradingStrategy(self.config.get('copy', {}))
+        self.copy_strategy = DynamicCopyTradingStrategy(self.config.get('copy', {}))
         self.risk_manager = RiskManager(self.config)
         self.order_executor = OrderExecutor(self.data_collector)
     

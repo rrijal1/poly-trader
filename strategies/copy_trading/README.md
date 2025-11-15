@@ -1,59 +1,110 @@
-# Copy Trading Strategy
+# Dynamic Copy Trading Strategy
 
-This strategy follows successful traders on Polymarket and replicates their positions with smaller, risk-managed sizes.
+This strategy dynamically discovers and follows successful traders on Polymarket, using wallet-based position sizing and separate wallets for risk isolation.
 
 ## Strategy Overview
 
-The copy trading strategy identifies high-performing traders and copies their positions with conservative position sizing. This approach leverages the expertise of proven traders while maintaining strict risk controls.
+The dynamic copy trading strategy continuously scans for top-performing traders over the last 50 days and automatically allocates capital based on their risk-adjusted performance. Each trader gets their own wallet to isolate risk and enable precise position sizing.
 
 ## Key Features
 
-- **Selective Trader Following**: Only follows traders with proven track records (high win rates, significant PnL)
-- **Risk Management**: Uses small position sizes (3-5% of the trader's position)
-- **Dynamic Updates**: Regularly updates trader performance metrics
-- **Confidence Scoring**: Adjusts position sizes based on trader consistency and recent performance
+- **Dynamic Trader Discovery**: Automatically finds top performers based on 50-day metrics
+- **Wallet-Based Position Sizing**: Position sizes calculated as (our_allocation ÷ trader_wallet) × trader_position
+- **Separate Wallets**: Each trader gets an isolated wallet for risk management
+- **Performance-Based Allocation**: Capital allocation adjusts based on risk-adjusted returns
+- **Continuous Rebalancing**: Daily wallet rebalancing based on performance
+
+## Performance Criteria
+
+Traders are selected based on:
+- **50-Day Win Rate**: Minimum 65%
+- **50-Day PnL**: Minimum $1,000
+- **Recent Trades**: Minimum 20 trades in last 50 days
+- **Consistency Score**: Measures performance stability
+- **Risk-Adjusted Return**: Sharpe-like ratio for risk management
+
+## Wallet Architecture
+
+```
+Total Copy Budget: $10,000
+├── cqs Wallet: $4,000 (40% allocation)
+├── trader_alpha Wallet: $2,500 (25% allocation)
+├── trader_beta Wallet: $1,500 (15% allocation)
+├── trader_gamma Wallet: $1,000 (10% allocation)
+└── trader_delta Wallet: $1,000 (10% allocation)
+```
+
+## Position Sizing Logic
+
+For each copied position:
+1. **Wallet Ratio**: Calculate our_allocation ÷ trader_wallet_balance
+2. **Base Size**: trader_position_size × wallet_ratio
+3. **Risk Limits**:
+   - Max 5% of our wallet per position
+   - Max 10% of trader's wallet
+   - Max single position limit per trader
+4. **Final Size**: Minimum of all constraints
 
 ## Currently Tracked Traders
 
 ### cqs (0xdfe3fedc5c7679be42c3d393e99d4b55247b73c4)
-- **Win Rate**: 74.3%
-- **Total PnL**: $464,844
-- **Total Trades**: 224
+- **Recent Win Rate**: 74.3% (50-day)
+- **Recent PnL**: $464,844
+- **Wallet Allocation**: 40% ($4,000)
 - **Specialization**: Political markets
-- **Risk Multiplier**: 3% (conservative sizing)
-- **Confidence Score**: 0.85
+- **Risk Score**: High consistency
+
+### Dynamic Discovery
+The system continuously discovers new traders like:
+- trader_alpha (71% win rate, $125K PnL)
+- Additional traders based on performance metrics
 
 ## Configuration
 
 ```python
 'copy': {
-    'max_copy_size': 10,        # Maximum position size to copy
-    'risk_multiplier': 0.05,    # 5% of trader's position size
-    'min_win_rate': 0.6,        # Minimum 60% win rate
-    'min_trades': 50,          # Minimum trades to consider
-    'update_interval_hours': 24 # Update trader stats daily
+    'total_copy_budget': 10000,        # Total USDC for copy trading
+    'performance_window_days': 50,     # Analysis window
+    'min_recent_win_rate': 0.65,       # Minimum 65% win rate
+    'min_recent_pnl': 1000,            # Minimum $1K recent PnL
+    'max_traders_to_follow': 5,        # Max traders to track
+    'max_position_vs_wallet': 0.05,    # 5% of our wallet limit
+    'max_position_vs_trader_wallet': 0.1, # 10% of trader wallet limit
+    'wallet_rebalance_interval_hours': 24, # Daily rebalancing
+    'update_interval_hours': 6         # Update every 6 hours
 }
 ```
 
-## How It Works
+## Environment Variables
 
-1. **Trader Selection**: Identifies traders with strong performance metrics
-2. **Position Monitoring**: Tracks the trader's current open positions
-3. **Signal Generation**: Creates copy signals for profitable or well-positioned trades
-4. **Risk Adjustment**: Applies conservative position sizing and confidence scoring
-5. **Execution**: Places orders with appropriate risk management
+Set up separate wallets for each trader:
+```bash
+COPY_CQS_PRIVATE_KEY=your_cqs_wallet_key
+COPY_TRADER_ALPHA_PRIVATE_KEY=your_alpha_wallet_key
+# ... etc for each trader
+```
 
 ## Risk Management
 
-- Maximum copy size limits exposure to any single trade
-- Risk multipliers ensure positions are much smaller than the original trader
-- Confidence scoring adjusts for trader consistency and position performance
-- Only copies positions that show positive PnL or good entry prices
+- **Isolated Wallets**: Each trader's positions are in separate wallets
+- **Dynamic Allocation**: Capital moves based on performance
+- **Position Limits**: Multiple constraints prevent oversized positions
+- **Performance Monitoring**: Underperformers are automatically removed
+- **Rebalancing**: Regular portfolio rebalancing maintains optimal allocation
 
-## Future Enhancements
+## How It Works
 
-- Real-time position tracking via Polymarket API
-- Dynamic trader discovery based on performance metrics
-- Machine learning-based confidence scoring
-- Portfolio diversification across multiple traders
-- Stop-loss mechanisms for copied positions
+1. **Discovery Phase**: Scan for traders meeting performance criteria
+2. **Wallet Setup**: Create isolated wallets for each discovered trader
+3. **Allocation Phase**: Distribute capital based on risk-adjusted returns
+4. **Position Monitoring**: Track trader positions in real-time
+5. **Signal Generation**: Create copy signals with wallet-based sizing
+6. **Rebalancing**: Adjust allocations based on ongoing performance
+
+## Advantages
+
+- **Dynamic Adaptation**: Automatically finds new successful traders
+- **Risk Isolation**: Separate wallets prevent contagion
+- **Optimal Sizing**: Wallet ratios ensure appropriate position sizes
+- **Performance-Based**: Capital follows success automatically
+- **Scalable**: Easy to add new traders and wallets
