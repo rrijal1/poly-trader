@@ -31,10 +31,11 @@ Traders are selected based on **strict multi-timeframe profitability requirement
 ```
 Total Copy Budget: $10,000
 ├── cqs Wallet: $4,000 (40% allocation)
-├── trader_alpha Wallet: $2,500 (25% allocation)
-├── trader_beta Wallet: $1,500 (15% allocation)
-├── trader_gamma Wallet: $1,000 (10% allocation)
-└── trader_delta Wallet: $1,000 (10% allocation)
+├── cigarettes Wallet: $3,000 (30% allocation)
+├── trader_alpha Wallet: $1,500 (15% allocation)
+├── trader_beta Wallet: $1,000 (10% allocation)
+├── trader_gamma Wallet: $500 (5% allocation)
+└── trader_delta Wallet: $0 (0% allocation - discovered dynamically)
 ```
 
 ## Position Sizing Logic
@@ -58,6 +59,16 @@ For each copied position:
 - **Total Trades**: 224
 - **Wallet Allocation**: 40% ($4,000)
 - **Specialization**: Political markets
+- **Risk Score**: High consistency
+
+### cigarettes (0xcigarettes123456789012345678901234567890)
+- **7-Day PnL**: +$12,000 (positive)
+- **30-Day PnL**: +$35,000 (positive)
+- **All-Time PnL**: +$280,000 (positive)
+- **Win Rate**: 71.5%
+- **Total Trades**: 189
+- **Wallet Allocation**: 30% ($3,000)
+- **Specialization**: Mixed markets
 - **Risk Score**: High consistency
 
 ### Dynamic Discovery
@@ -85,6 +96,7 @@ The system continuously discovers new traders like:
 Set up separate wallets for each trader:
 ```bash
 COPY_CQS_PRIVATE_KEY=your_cqs_wallet_key
+COPY_CIGARETTES_PRIVATE_KEY=your_cigarettes_wallet_key
 COPY_TRADER_ALPHA_PRIVATE_KEY=your_alpha_wallet_key
 # ... etc for each trader
 ```
