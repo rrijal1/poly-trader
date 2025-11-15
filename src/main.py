@@ -74,16 +74,14 @@ class PolymarketTrader:
                 'update_interval_hours': 24  # Update trader list daily
             },
             'copy': {
-                'total_copy_budget': 10000,  # Total USDC allocated to copy trading
-                'performance_window_days': 50,  # Analyze last 50 days performance
-                'min_recent_trades': 20,  # Minimum trades in last 50 days
-                'min_recent_win_rate': 0.65,  # Minimum 65% win rate
-                'min_recent_pnl': 1000,  # Minimum $1K PnL in last 50 days
+                'total_copy_budget': 10000,  # Total USDC for copy trading
+                'min_trades': 50,  # Minimum total trades to consider
+                'min_wallet_balance': 1000,  # Minimum wallet balance ($1K)
                 'max_traders_to_follow': 5,  # Maximum traders to track
                 'max_position_vs_wallet': 0.05,  # 5% of our wallet per position
                 'max_position_vs_trader_wallet': 0.1,  # 10% of trader's wallet
-                'wallet_rebalance_interval_hours': 24,  # Rebalance daily
-                'update_interval_hours': 6  # Update trader data every 6 hours
+                'wallet_rebalance_interval_hours': 24,  # Daily rebalancing
+                'update_interval_hours': 6  # Update every 6 hours
             }
         }
         

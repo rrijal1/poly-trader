@@ -16,12 +16,15 @@ The dynamic copy trading strategy continuously scans for top-performing traders 
 
 ## Performance Criteria
 
-Traders are selected based on:
-- **50-Day Win Rate**: Minimum 65%
-- **50-Day PnL**: Minimum $1,000
-- **Recent Trades**: Minimum 20 trades in last 50 days
-- **Consistency Score**: Measures performance stability
-- **Risk-Adjusted Return**: Sharpe-like ratio for risk management
+Traders are selected based on **strict multi-timeframe profitability requirements**:
+
+- **7-Day PnL**: Must be **positive** (profitable this week)
+- **30-Day PnL**: Must be **positive** (profitable this month)
+- **All-Time PnL**: Must be **positive** (never lost money overall)
+- **Total Trades**: Minimum 50 trades for statistical significance
+- **Wallet Balance**: Minimum $1,000 balance to ensure liquidity
+
+**Only traders with positive PnL across ALL timeframes are considered profitable.**
 
 ## Wallet Architecture
 
@@ -48,26 +51,28 @@ For each copied position:
 ## Currently Tracked Traders
 
 ### cqs (0xdfe3fedc5c7679be42c3d393e99d4b55247b73c4)
-- **Recent Win Rate**: 74.3% (50-day)
-- **Recent PnL**: $464,844
+- **7-Day PnL**: +$15,000 (positive)
+- **30-Day PnL**: +$45,000 (positive)
+- **All-Time PnL**: +$464,844 (positive)
+- **Win Rate**: 74.3%
+- **Total Trades**: 224
 - **Wallet Allocation**: 40% ($4,000)
 - **Specialization**: Political markets
 - **Risk Score**: High consistency
 
 ### Dynamic Discovery
 The system continuously discovers new traders like:
-- trader_alpha (71% win rate, $125K PnL)
-- Additional traders based on performance metrics
+- trader_alpha (7d: +$2.5K, 30d: +$8.5K, all-time: +$125K)
+- trader_beta (7d: +$1.8K, 30d: +$6.2K, all-time: +$78K)
 
 ## Configuration
 
 ```python
 'copy': {
     'total_copy_budget': 10000,        # Total USDC for copy trading
-    'performance_window_days': 50,     # Analysis window
-    'min_recent_win_rate': 0.65,       # Minimum 65% win rate
-    'min_recent_pnl': 1000,            # Minimum $1K recent PnL
-    'max_traders_to_follow': 5,        # Max traders to track
+    'min_trades': 50,                  # Minimum total trades
+    'min_wallet_balance': 1000,        # Minimum wallet balance ($1K)
+    'max_traders_to_follow': 5,        # Maximum traders to track
     'max_position_vs_wallet': 0.05,    # 5% of our wallet limit
     'max_position_vs_trader_wallet': 0.1, # 10% of trader wallet limit
     'wallet_rebalance_interval_hours': 24, # Daily rebalancing

@@ -22,10 +22,12 @@ class DynamicTraderProfile:
     username: str
     profile_url: str
 
-    # Performance metrics (last 50 days)
-    recent_win_rate: float  # Win rate over last 50 days
-    recent_pnl: float  # PnL over last 50 days
-    recent_trades: int  # Number of trades in last 50 days
+    # Performance metrics across multiple timeframes
+    pnl_7d: float  # 7-day PnL
+    pnl_30d: float  # 30-day (1 month) PnL
+    pnl_all_time: float  # All-time PnL
+    recent_win_rate: float  # Overall win rate
+    total_trades: int  # Total number of trades
     avg_trade_size: float  # Average position size
     wallet_balance: float  # Current wallet balance (USDC)
 
@@ -65,11 +67,9 @@ class DynamicCopyTradingStrategy:
     def __init__(self, config: Dict):
         self.config = config
 
-        # Performance tracking parameters
-        self.performance_window_days = config.get('performance_window_days', 50)
-        self.min_recent_trades = config.get('min_recent_trades', 20)
-        self.min_recent_win_rate = config.get('min_recent_win_rate', 0.65)  # 65%
-        self.min_recent_pnl = config.get('min_recent_pnl', 1000)  # $1K minimum
+        # Performance tracking parameters - now based on multi-timeframe profitability
+        self.min_trades = config.get('min_trades', 50)  # Minimum total trades
+        self.min_wallet_balance = config.get('min_wallet_balance', 1000)  # Minimum wallet balance to consider
 
         # Wallet and sizing parameters
         self.total_copy_budget = config.get('total_copy_budget', 10000)  # Total USDC for copy trading
@@ -116,9 +116,11 @@ class DynamicCopyTradingStrategy:
                 address=trader_data['address'],
                 username=trader_data['username'],
                 profile_url=trader_data['profile_url'],
+                pnl_7d=15000,  # Estimated 7-day PnL
+                pnl_30d=45000,  # Estimated 30-day PnL
+                pnl_all_time=464844,  # All-time PnL
                 recent_win_rate=0.743,  # Will be updated dynamically
-                recent_pnl=464844,
-                recent_trades=224,
+                total_trades=224,
                 avg_trade_size=2000,  # Estimated
                 wallet_balance=trader_data['estimated_wallet_balance'],
                 consistency_score=0.85,
@@ -159,31 +161,47 @@ class DynamicCopyTradingStrategy:
 
     def _discover_new_traders(self):
         """
-        Discover new profitable traders based on recent performance.
-        In production, this would query Polymarket API for trader leaderboards.
+        Discover new profitable traders based on multi-timeframe profitability.
+        Traders must have positive PnL in 7-day, 30-day, and all-time periods.
         """
         logger.info("Discovering new profitable traders...")
 
         # Mock discovery process - in reality would scan Polymarket trader data
         # This would involve:
-        # 1. Querying trader performance APIs
-        # 2. Analyzing 50-day performance metrics
-        # 3. Filtering for consistency and profitability
-        # 4. Ranking by risk-adjusted returns
+        # 1. Querying trader performance APIs for multi-timeframe PnL
+        # 2. Filtering for positive PnL across all timeframes
+        # 3. Ranking by consistency and total returns
 
         mock_discovered_traders = [
             {
                 'address': '0x1234567890123456789012345678901234567890',
                 'username': 'trader_alpha',
                 'profile_url': 'https://polymarket.com/@trader_alpha',
-                'recent_win_rate': 0.71,
-                'recent_pnl': 125000,
-                'recent_trades': 89,
+                'pnl_7d': 2500,    # Positive 7-day
+                'pnl_30d': 8500,   # Positive 30-day
+                'pnl_all_time': 125000,  # Positive all-time
+                'win_rate': 0.71,
+                'total_trades': 89,
                 'avg_trade_size': 1500,
                 'wallet_balance': 200000,
                 'consistency_score': 0.78,
                 'risk_adjusted_return': 1.8,
                 'market_specialization': ['crypto', 'defi'],
+            },
+            {
+                'address': '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+                'username': 'trader_beta',
+                'profile_url': 'https://polymarket.com/@trader_beta',
+                'pnl_7d': 1800,    # Positive 7-day
+                'pnl_30d': 6200,   # Positive 30-day
+                'pnl_all_time': 78000,   # Positive all-time
+                'win_rate': 0.68,
+                'total_trades': 67,
+                'avg_trade_size': 1200,
+                'wallet_balance': 150000,
+                'consistency_score': 0.82,
+                'risk_adjusted_return': 2.1,
+                'market_specialization': ['sports', 'football'],
             }
         ]
 
@@ -194,10 +212,12 @@ class DynamicCopyTradingStrategy:
             if trader_key in self.discovered_traders:
                 continue
 
-            # Check if meets criteria
-            if (trader_data['recent_win_rate'] >= self.min_recent_win_rate and
-                trader_data['recent_pnl'] >= self.min_recent_pnl and
-                trader_data['recent_trades'] >= self.min_recent_trades):
+            # Check if meets multi-timeframe profitability criteria
+            if (trader_data['pnl_7d'] > 0 and  # Positive 7-day PnL
+                trader_data['pnl_30d'] > 0 and  # Positive 30-day PnL
+                trader_data['pnl_all_time'] > 0 and  # Positive all-time PnL
+                trader_data['total_trades'] >= self.min_trades and  # Minimum trade count
+                trader_data['wallet_balance'] >= self.min_wallet_balance):  # Minimum wallet balance
 
                 # Create wallet for new trader
                 wallet_key = f"COPY_{trader_key.upper()}_PRIVATE_KEY"
@@ -215,9 +235,11 @@ class DynamicCopyTradingStrategy:
                     address=trader_data['address'],
                     username=trader_data['username'],
                     profile_url=trader_data['profile_url'],
-                    recent_win_rate=trader_data['recent_win_rate'],
-                    recent_pnl=trader_data['recent_pnl'],
-                    recent_trades=trader_data['recent_trades'],
+                    pnl_7d=trader_data['pnl_7d'],
+                    pnl_30d=trader_data['pnl_30d'],
+                    pnl_all_time=trader_data['pnl_all_time'],
+                    recent_win_rate=trader_data['win_rate'],
+                    total_trades=trader_data['total_trades'],
                     avg_trade_size=trader_data['avg_trade_size'],
                     wallet_balance=trader_data['wallet_balance'],
                     consistency_score=trader_data['consistency_score'],
@@ -242,19 +264,19 @@ class DynamicCopyTradingStrategy:
 
                 self.wallet_configs[trader_key] = wallet_config
 
-                logger.info(f"Discovered and added new trader: {trader_key} ({trader_data['recent_win_rate']:.1%} win rate)")
+                logger.info(f"Discovered and added new trader: {trader_key} (7d: +${trader_data['pnl_7d']}, 30d: +${trader_data['pnl_30d']}, all-time: +${trader_data['pnl_all_time']})")
 
-        # Remove underperforming traders
+        # Remove underperforming traders (those with negative PnL in any timeframe)
         traders_to_remove = []
         for trader_key, trader in self.discovered_traders.items():
-            if trader.recent_win_rate < self.min_recent_win_rate or trader.recent_pnl < self.min_recent_pnl:
+            if (trader.pnl_7d <= 0 or trader.pnl_30d <= 0 or trader.pnl_all_time <= 0):
                 traders_to_remove.append(trader_key)
 
         for trader_key in traders_to_remove:
             del self.discovered_traders[trader_key]
             if trader_key in self.wallet_configs:
                 del self.wallet_configs[trader_key]
-            logger.info(f"Removed underperforming trader: {trader_key}")
+            logger.info(f"Removed trader with negative PnL in one or more timeframes: {trader_key}")
 
         self.last_update = datetime.now()
 
@@ -262,13 +284,21 @@ class DynamicCopyTradingStrategy:
         """Update performance metrics for tracked traders."""
         logger.info("Updating trader performance metrics...")
 
-        # In production, this would fetch latest 50-day performance data
+        # In production, this would fetch latest multi-timeframe PnL data
         # For now, we'll simulate performance updates
 
         for trader_key, trader in self.discovered_traders.items():
-            # Simulate slight performance changes
+            # Simulate slight performance changes while maintaining positive PnL
+            pnl_change_7d = np.random.normal(0.02, 0.1)  # 2% mean change, 10% volatility
+            pnl_change_30d = np.random.normal(0.015, 0.08)  # 1.5% mean change, 8% volatility
+            pnl_change_all_time = np.random.normal(0.01, 0.05)  # 1% mean change, 5% volatility
+
+            # Ensure PnL stays positive (regenerate if negative)
+            trader.pnl_7d = max(trader.pnl_7d * (1 + pnl_change_7d), 100)  # Minimum $100
+            trader.pnl_30d = max(trader.pnl_30d * (1 + pnl_change_30d), 500)  # Minimum $500
+            trader.pnl_all_time = max(trader.pnl_all_time * (1 + pnl_change_all_time), 1000)  # Minimum $1K
+
             trader.recent_win_rate = np.clip(trader.recent_win_rate + np.random.normal(0, 0.02), 0.5, 0.95)
-            trader.recent_pnl *= (1 + np.random.normal(0, 0.05))  # 5% volatility
             trader.consistency_score = min(trader.consistency_score + 0.01, 1.0)
             trader.last_updated = datetime.now()
 
@@ -439,13 +469,16 @@ class DynamicCopyTradingStrategy:
             'strategy_type': 'dynamic_copy_trading',
             'total_traders_tracked': len(self.discovered_traders),
             'total_copy_budget': self.total_copy_budget,
-            'performance_window_days': self.performance_window_days,
+            'profitability_criteria': 'Positive PnL in 7-day, 30-day, and all-time periods',
             'traders': [
                 {
                     'username': t.username,
                     'address': t.address,
-                    'recent_win_rate': t.recent_win_rate,
-                    'recent_pnl': t.recent_pnl,
+                    'pnl_7d': t.pnl_7d,
+                    'pnl_30d': t.pnl_30d,
+                    'pnl_all_time': t.pnl_all_time,
+                    'win_rate': t.recent_win_rate,
+                    'total_trades': t.total_trades,
                     'wallet_allocation': t.wallet_allocation,
                     'wallet_balance_ratio': self.wallet_configs[t.username].available_balance / t.wallet_balance if t.username in self.wallet_configs else 0,
                     'consistency_score': t.consistency_score,
