@@ -1,0 +1,3 @@
+"""
+Counter Trading Strategy Package.
+"""

@@ -42,6 +42,7 @@ from .risk_manager import RiskManager
 from .order_executor import OrderExecutor
 from strategies.price_arbitrage.arbitrage import PriceArbitrageStrategy
 from strategies.btc_price_prediction.btc_strategy import BTCPricePredictionStrategy
+from strategies.counter_trading.counter_strategy import CounterTradingStrategy
 from strategies.common import TradeSignal
 
 class PolymarketTrader:
@@ -63,6 +64,9 @@ class PolymarketTrader:
                 'mispricing_threshold': 0.05,  # 5% mispricing
                 'arbitrage_threshold': 0.01,   # 1 cent arbitrage
                 'max_size': 50
+            },
+            'counter': {
+                'max_size': 25  # Smaller positions for counter trading
             }
         }
         
@@ -70,6 +74,7 @@ class PolymarketTrader:
         self.data_collector = DataCollector()
         self.arbitrage_strategy = PriceArbitrageStrategy(self.config['arbitrage'])
         self.btc_strategy = BTCPricePredictionStrategy(self.config.get('btc', {}))
+        self.counter_strategy = CounterTradingStrategy(self.config.get('counter', {}))
         self.risk_manager = RiskManager(self.config)
         self.order_executor = OrderExecutor(self.data_collector)
     
@@ -95,10 +100,11 @@ class PolymarketTrader:
                 # Update existing positions
                 self.risk_manager.update_positions(markets_df)
                 
-                # Generate trading signals from both strategies
+                # Generate trading signals from all strategies
                 arb_signals = self.arbitrage_strategy.analyze_markets(markets_df)
                 btc_signals = self.btc_strategy.analyze_markets(markets_df)
-                signals = arb_signals + btc_signals
+                counter_signals = self.counter_strategy.analyze_markets(markets_df)
+                signals = arb_signals + btc_signals + counter_signals
                 
                 if signals:
                     logger.info(f"Generated {len(signals)} arbitrage signals")

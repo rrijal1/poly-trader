@@ -1,0 +1,227 @@
+"""
+Counter Trading Strategy
+Trades against consistently losing Polymarket traders to capture behavioral edges.
+"""
+
+import logging
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+from ..common import TradeSignal
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class TraderProfile:
+    """Profile of a tracked trader."""
+    username: str
+    profile_url: str
+    total_pnl: float
+    win_rate: float
+    total_trades: int
+    active_markets: List[str]
+    risk_score: float  # 0-1, higher = more risky to counter
+
+class CounterTradingStrategy:
+    """
+    Counter trading strategy that bets against consistently losing traders.
+    
+    Based on the principle that poor-performing traders often have persistent biases
+    that can be systematically exploited.
+    """
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        # Pre-defined losing traders from research (would be dynamic in production)
+        self.tracked_traders = self._initialize_tracked_traders()
+    
+    def _initialize_tracked_traders(self) -> Dict[str, TraderProfile]:
+        """Initialize the list of tracked losing traders."""
+        return {
+            'SSryjh': TraderProfile(
+                username='SSryjh',
+                profile_url='https://polymarket.com/@SSryjh',
+                total_pnl=-3400000,  # -$3.4M
+                win_rate=0.27,       # 27%
+                total_trades=67,
+                active_markets=['sports'],
+                risk_score=0.9        # High risk score = very consistent loser
+            ),
+            'sonnyf': TraderProfile(
+                username='sonnyf',
+                profile_url='https://polymarket.com/@sonnyf',
+                total_pnl=-470000,    # -$470K
+                win_rate=0.21,        # 21%
+                total_trades=1000,    # Estimated
+                active_markets=['politics', 'sports', 'crypto'],
+                risk_score=0.8
+            ),
+            'egas': TraderProfile(
+                username='egas',
+                profile_url='https://polymarket.com/@egas',
+                total_pnl=-13000,     # -$13K
+                win_rate=0.28,        # 28%
+                total_trades=200,     # Estimated
+                active_markets=['crypto'],
+                risk_score=0.7
+            )
+        }
+    
+    def analyze_market(self, market_data: Dict) -> List[TradeSignal]:
+        """
+        Analyze market for counter trading opportunities.
+        
+        In a real implementation, this would:
+        1. Monitor positions of tracked traders in real-time
+        2. Detect when they open new positions
+        3. Generate counter trades
+        
+        For now, this is a conceptual framework.
+        """
+        signals = []
+        market_id = market_data['market_id']
+        question = market_data.get('question', '').lower()
+        
+        # Check if any tracked traders are active in this market type
+        relevant_traders = self._get_relevant_traders(question)
+        
+        if not relevant_traders:
+            return signals
+        
+        # In production, this would check real-time trader positions
+        # For now, we'll simulate based on market conditions
+        
+        for trader in relevant_traders:
+            signal = self._generate_counter_signal(market_data, trader)
+            if signal:
+                signals.append(signal)
+        
+        return signals
+    
+    def _get_relevant_traders(self, question: str) -> List[TraderProfile]:
+        """Get traders who are active in markets matching this question."""
+        relevant_traders = []
+        
+        for trader in self.tracked_traders.values():
+            # Check if trader is active in this market type
+            if any(market_type in question for market_type in trader.active_markets):
+                relevant_traders.append(trader)
+        
+        return relevant_traders
+    
+    def _generate_counter_signal(self, market_data: Dict, trader: TraderProfile) -> Optional[TradeSignal]:
+        """
+        Generate a counter trading signal against a specific trader.
+        
+        In production, this would analyze the trader's actual position.
+        For now, this uses market conditions as a proxy.
+        """
+        market_id = market_data['market_id']
+        yes_price = market_data.get('yes_price', 0)
+        no_price = market_data.get('no_price', 0)
+        
+        if yes_price == 0 or no_price == 0:
+            return None
+        
+        # Counter trading logic based on trader profile
+        confidence = self._calculate_counter_confidence(trader)
+        
+        # Determine which side the losing trader likely favors
+        # (This is simplified - real implementation would track actual positions)
+        likely_trader_side = self._predict_trader_position(market_data, trader)
+        
+        if likely_trader_side == 'yes':
+            # Counter trade: bet against YES (buy NO)
+            action = 'buy_no'
+            price = no_price
+        elif likely_trader_side == 'no':
+            # Counter trade: bet against NO (buy YES)
+            action = 'buy_yes'
+            price = yes_price
+        else:
+            return None
+        
+        size = min(self.config.get('max_size', 25), market_data.get('volume', 0) * 0.005)
+        
+        return TradeSignal(
+            market_id=market_id,
+            action=action,
+            price=price,
+            size=size,
+            reason=f'Counter trading {trader.username} ({trader.win_rate:.0%} win rate, ${trader.total_pnl:,.0f} PnL)',
+            confidence=confidence
+        )
+    
+    def _calculate_counter_confidence(self, trader: TraderProfile) -> float:
+        """Calculate confidence in counter trading this trader."""
+        # Base confidence from win rate (lower win rate = higher confidence)
+        win_rate_factor = 1 - trader.win_rate  # 0.73 for 27% win rate
+        
+        # PnL factor (more negative PnL = higher confidence)
+        pnl_factor = min(1.0, abs(trader.total_pnl) / 1000000)  # Scale by $1M
+        
+        # Risk score factor
+        risk_factor = trader.risk_score
+        
+        # Combined confidence
+        confidence = (win_rate_factor * 0.4 + pnl_factor * 0.4 + risk_factor * 0.2)
+        
+        return min(1.0, confidence)
+    
+    def _predict_trader_position(self, market_data: Dict, trader: TraderProfile) -> Optional[str]:
+        """
+        Predict which side a losing trader would take.
+        
+        This is a simplified model based on common losing trader patterns.
+        In production, this would be based on actual position tracking.
+        """
+        question = market_data.get('question', '').lower()
+        yes_price = market_data.get('yes_price', 0)
+        no_price = market_data.get('no_price', 0)
+        
+        # Different traders have different biases
+        if trader.username == 'SSryjh':
+            # Sports trader with low win rate - often bets favorites
+            if 'favorite' in question or 'underdog' in question:
+                return 'yes' if 'favorite' in question else 'no'
+            # General bias toward "yes" in sports
+            return 'yes'
+            
+        elif trader.username == 'sonnyf':
+            # Politics/sports trader - often contrarian
+            if yes_price > 0.6:  # Heavy favorite
+                return 'no'  # Bets underdog
+            elif yes_price < 0.4:  # Heavy underdog
+                return 'yes'  # Fades the underdog
+            else:
+                return 'yes'  # Slight bias
+            
+        elif trader.username == 'egas':
+            # Crypto trader - momentum follower
+            if 'crypto' in question or 'bitcoin' in question or 'token' in question:
+                # Often follows hype
+                return 'yes' if 'launch' in question or 'new' in question else 'no'
+        
+        # Default: assume they take the more expensive side (overconfidence)
+        return 'yes' if yes_price > no_price else 'no'
+    
+    def analyze_markets(self, markets_df: pd.DataFrame) -> List[TradeSignal]:
+        """Analyze multiple markets."""
+        all_signals = []
+        for _, market in markets_df.iterrows():
+            signals = self.analyze_market(market.to_dict())
+            all_signals.extend(signals)
+        return all_signals
+    
+    def update_trader_profiles(self):
+        """
+        Update trader profiles with latest performance data.
+        
+        In production, this would scrape Polymarket profiles periodically.
+        """
+        # This would be called periodically to refresh trader statistics
+        logger.info("Updating trader profiles...")
+        # Implementation would fetch latest data from Polymarket API/profiles
