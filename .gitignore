@@ -3,6 +3,9 @@ poly/
 venv/
 env/
 
+# Official documentation (not tracked)
+official-docs/
+
 # Environment variables
 .env
 .env.local
