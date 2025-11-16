@@ -11,9 +11,14 @@ import pandas as pd
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
+import sys
+import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from common import TradeSignal
+try:
+    from .common import TradeSignal
+except ImportError:
+    from common import TradeSignal
 from strategy_copy_trading.copy_strategy import DynamicCopyTradingStrategy
 
 # Load environment variables

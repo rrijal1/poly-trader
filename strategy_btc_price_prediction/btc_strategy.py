@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from ..common import TradeSignal
+from .common import TradeSignal
 
 logger = logging.getLogger(__name__)
 

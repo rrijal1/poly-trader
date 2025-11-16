@@ -8,7 +8,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass
 import pandas as pd
 
-from ..common import TradeSignal
+from .common import TradeSignal
 
 logger = logging.getLogger(__name__)
 
