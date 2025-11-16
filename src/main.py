@@ -40,11 +40,11 @@ logger = logging.getLogger(__name__)
 from .data_collector import DataCollector
 from .risk_manager import RiskManager
 from .order_executor import OrderExecutor
-from strategies.price_arbitrage.arbitrage import PriceArbitrageStrategy
-from strategies.btc_price_prediction.btc_strategy import BTCPricePredictionStrategy
-from strategies.counter_trading.counter_strategy import DynamicCounterTradingStrategy
-from strategies.copy_trading.copy_strategy import DynamicCopyTradingStrategy
-from strategies.common import TradeSignal
+from strategy_price_arbitrage.arbitrage import PriceArbitrageStrategy
+from strategy_btc_price_prediction.btc_strategy import BTCPricePredictionStrategy
+from strategy_counter_trading.counter_strategy import DynamicCounterTradingStrategy
+from strategy_copy_trading.copy_strategy import DynamicCopyTradingStrategy
+from common import TradeSignal
 
 class PolymarketTrader:
     """Main trader class."""

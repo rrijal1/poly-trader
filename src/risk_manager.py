@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import pandas as pd
 
-from strategies.price_arbitrage.arbitrage import TradeSignal
+from common import TradeSignal
 
 logger = logging.getLogger(__name__)
 

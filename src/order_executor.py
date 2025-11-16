@@ -11,7 +11,7 @@ from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import OrderArgs, OrderType, ApiCreds
 from py_clob_client.order_builder.constants import BUY, SELL
 
-from strategies.price_arbitrage.arbitrage import TradeSignal
+from common import TradeSignal
 from .data_collector import DataCollector
 
 logger = logging.getLogger(__name__)
