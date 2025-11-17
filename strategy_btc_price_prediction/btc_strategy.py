@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-from .common import TradeSignal
+from common import TradeSignal, get_clob_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class BTCPricePredictionStrategy:
     
     def __init__(self, config: Dict):
         self.config = config
+        self.client = get_clob_client()  # Use optimized CLOB client
         # Historical BTC 15-min returns (simplified - in reality would fetch from API)
         self.btc_returns_15min = self._load_historical_returns()
     
@@ -55,6 +56,7 @@ class BTCPricePredictionStrategy:
         
         yes_price = market_data.get('yes_price', 0)
         no_price = market_data.get('no_price', 0)
+        token_ids = market_data.get('token_ids', [])
         
         if yes_price == 0 or no_price == 0:
             return signals
@@ -88,7 +90,8 @@ class BTCPricePredictionStrategy:
                     price=yes_price,
                     size=size,
                     reason=f'BTC mispricing: implied {implied_prob_up:.3f} < actual {actual_prob_up:.3f} prob up',
-                    confidence=min(1.0, price_diff / mispricing_threshold)
+                    confidence=min(1.0, price_diff / mispricing_threshold),
+                    token_id=token_ids[0] if len(token_ids) > 0 else None  # YES token
                 ))
             else:
                 # Market overestimates probability of up move - buy NO
@@ -98,7 +101,8 @@ class BTCPricePredictionStrategy:
                     price=no_price,
                     size=size,
                     reason=f'BTC mispricing: implied {implied_prob_up:.3f} > actual {actual_prob_up:.3f} prob up',
-                    confidence=min(1.0, price_diff / mispricing_threshold)
+                    confidence=min(1.0, price_diff / mispricing_threshold),
+                    token_id=token_ids[1] if len(token_ids) > 1 else None  # NO token
                 ))
         
         # Also check for arbitrage opportunities (YES + NO < 1)
@@ -113,7 +117,8 @@ class BTCPricePredictionStrategy:
                 price=min(yes_price, no_price),
                 size=size,
                 reason=f'BTC arbitrage: total {total:.4f} < 1, profit ${profit:.2f}',
-                confidence=min(1.0, (1 - total) / arb_threshold)
+                confidence=min(1.0, (1 - total) / arb_threshold),
+                token_id=token_ids[0] if len(token_ids) > 0 else None  # Use YES token for arbitrage
             ))
         
         return signals

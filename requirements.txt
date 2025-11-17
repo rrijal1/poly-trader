@@ -1,8 +1,5 @@
 py-clob-client
-web3
-pandas
-requests
 python-dotenv
-ccxt  # for additional exchange integrations if needed
+pandas
 numpy
-matplotlib  # for backtesting visualization
+requests

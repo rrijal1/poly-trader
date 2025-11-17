@@ -11,7 +11,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import os
 
-from .common import TradeSignal
+from common import TradeSignal, get_clob_client
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ class DynamicCounterTradingStrategy:
 
     def __init__(self, config: Dict):
         self.config = config
+        self.client = get_clob_client()  # Use optimized CLOB client
 
         # Loss criteria parameters - traders must have negative PnL in ALL timeframes
         self.min_trades = config.get('min_trades', 50)  # Minimum total trades
@@ -352,32 +353,57 @@ class DynamicCounterTradingStrategy:
     def _get_trader_positions(self, trader_address: str) -> List[Dict]:
         """
         Get current positions for a losing trader to counter.
-        In production, this would query Polymarket API for trader's open positions.
+        Uses get_trades() API to monitor real-time trader activity.
         """
-        # Mock positions - in reality would fetch from API
-        # These represent positions we want to counter
-        mock_positions = [
-            {
-                'market_id': 'sports_market_1',
-                'outcome': 'YES',  # Losing trader betting on this
-                'size': 1500,  # Position size we're countering
-                'entry_price': 0.65,
-                'current_price': 0.62,
-                'pnl': -45,
-                'timestamp': datetime.now() - timedelta(hours=1)
-            },
-            {
-                'market_id': 'politics_market_1',
-                'outcome': 'NO',  # Losing trader betting on this
-                'size': 1200,
-                'entry_price': 0.58,
-                'current_price': 0.55,
-                'pnl': -36,
-                'timestamp': datetime.now() - timedelta(hours=3)
-            }
-        ]
+        try:
+            # Get recent trades for this trader using official API
+            recent_trades = self.client.get_trader_trades(trader_address, limit=50)
 
-        return mock_positions
+            if not recent_trades:
+                return []
+
+            # Convert trades to positions (group by market and outcome)
+            positions = {}
+            for trade in recent_trades:
+                market_id = trade.get('market', '')
+                side = trade.get('side', '').upper()
+                size = float(trade.get('size', 0))
+                price = float(trade.get('price', 0))
+
+                key = f"{market_id}_{side}"
+                if key not in positions:
+                    positions[key] = {
+                        'market_id': market_id,
+                        'outcome': side,
+                        'size': 0,
+                        'avg_price': 0,
+                        'total_cost': 0,
+                        'timestamp': datetime.fromisoformat(trade.get('timestamp', '').replace('Z', '+00:00'))
+                    }
+
+                # Accumulate position size and calculate average price
+                positions[key]['total_cost'] += size * price
+                positions[key]['size'] += size
+                positions[key]['avg_price'] = positions[key]['total_cost'] / positions[key]['size']
+
+            # Convert to list format expected by the rest of the code
+            position_list = []
+            for pos in positions.values():
+                position_list.append({
+                    'market_id': pos['market_id'],
+                    'outcome': pos['outcome'],
+                    'size': pos['size'],
+                    'entry_price': pos['avg_price'],
+                    'current_price': pos['avg_price'],  # Simplified - in reality would get current market price
+                    'pnl': 0,  # Would need current market price to calculate
+                    'timestamp': pos['timestamp']
+                })
+
+            return position_list
+
+        except Exception as e:
+            logger.error(f"Failed to get positions for trader {trader_address}: {e}")
+            return []
 
     def analyze_markets(self, markets_df: pd.DataFrame) -> List[TradeSignal]:
         """
@@ -414,6 +440,9 @@ class DynamicCounterTradingStrategy:
 
                     market = market_data.iloc[0]
 
+                    # Get token_ids for direct CLOB trading
+                    token_ids = market.get('token_ids', [])
+
                     # Calculate dynamic counter position size
                     counter_size = self._calculate_dynamic_position_size(trader, position['size'])
 
@@ -430,9 +459,11 @@ class DynamicCounterTradingStrategy:
                     if position['outcome'] == 'YES':
                         action = 'buy_no'  # Counter YES with NO
                         price = market.get('best_bid_no', market.get('no_price', position['current_price']))
+                        token_id = token_ids[1] if len(token_ids) > 1 else None  # NO token
                     else:
                         action = 'buy_yes'  # Counter NO with YES
                         price = market.get('best_bid_yes', market.get('yes_price', position['current_price']))
+                        token_id = token_ids[0] if len(token_ids) > 0 else None  # YES token
 
                     # Calculate confidence based on trader's loss consistency
                     confidence = (
@@ -448,7 +479,8 @@ class DynamicCounterTradingStrategy:
                         price=price,
                         size=counter_size,
                         reason=f"Counter trading losing trader {trader.username} (7d: ${trader.pnl_7d:.0f}, 30d: ${trader.pnl_30d:.0f}, all-time: ${trader.pnl_all_time:.0f}, {trader.win_rate:.1%} win rate)",
-                        confidence=confidence
+                        confidence=confidence,
+                        token_id=token_id
                     )
 
                     signals.append(signal)
