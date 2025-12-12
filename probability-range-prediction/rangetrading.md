@@ -1,98 +1,160 @@
 # Range Trading (Long Volatility) — Polymarket
 
 Example market (for context):
+
 - https://polymarket.com/event/bitcoin-price-on-december-19?tid=1765567462403
 
 ## What this strategy is
 
-Range markets pay out if the underlying stays **inside** a price band until expiry.
+Polymarket "range" or "bracket" markets pay out based on where the reference price settles **at resolution time** (e.g., BTC price at noon ET on Dec 19).
 
-- **YES**: price stays inside the band → *short volatility*
-- **NO**: price exits the band in either direction → *long volatility*
+- **YES**: price is inside $[L, U]$ at settlement → *short volatility*
+- **NO**: price is outside $[L, U]$ at settlement → *long volatility*
 
-The edge you’re looking for: cases where **NO is underpriced** relative to a reasonable estimate of breakout probability.
+**Key**: The price can leave and re-enter the bracket during the week—only the **terminal settlement price** matters.
+
+The edge you're looking for: cases where **NO is underpriced** relative to your modeled probability of breakout at $T$.
+
+---
 
 ## Inputs
 
-- Spot price $S$
+- Current spot price $S_0$
 - Range bounds: lower $L$, upper $U$
 - Time to expiry in days: $T$
-- Either:
-  - options deltas at $L$ and $U$, or
-  - implied volatility $IV$
+- Annualized volatility $\sigma$ (from either IV or realized vol)
 
-## Step 1 — Estimate breakout probability
+---
 
-### Method A: Options delta shortcut
+## Step 1 — Calculate terminal breakout probability (lognormal model)
 
-Use deltas as a probability proxy:
+Under geometric Brownian motion (GBM), the terminal log-return $X = \ln(S_T / S_0)$ is normally distributed:
 
-- $\Delta_{call}$ at the **upper** strike $U$
-- $\Delta_{put}$ at the **lower** strike $L$
+$$X \sim \mathcal{N}\!\left(-\tfrac{1}{2}\sigma^2 T,\ \sigma^2 T\right)$$
 
-Approximation:
+where $\sigma$ is the annualized volatility and $T$ is time in years.
 
-$$P(\text{Breakout}) \approx \Delta_{call} + \Delta_{put}$$
-$$P(\text{Inside}) \approx 1 - (\Delta_{call} + \Delta_{put})$$
+Then the probability that $S_T$ lands **inside** $[L, U]$ is:
 
-Trade idea:
+$$P(\text{Inside}) = \Phi\!\left(\frac{\ln(U/S_0) + \tfrac{1}{2}\sigma^2 T}{\sigma\sqrt{T}}\right) - \Phi\!\left(\frac{\ln(L/S_0) + \tfrac{1}{2}\sigma^2 T}{\sigma\sqrt{T}}\right)$$
 
-- If $P(\text{Breakout})$ is meaningfully higher than the Polymarket **NO** price, **NO** is underpriced.
+and the **breakout** probability is:
 
-Example: if $\Delta_{call}+\Delta_{put}=0.60$ but NO costs $0.40$, that’s a large theoretical edge.
+$$P(\text{Breakout}) = 1 - P(\text{Inside})$$
 
-### Method B: Expected move from implied volatility
+### Where to get $\sigma$
 
-Compute 1-sigma expected move:
+**Option 1: Implied volatility from options**
 
-$$\text{Expected Move} = S \times IV \times \sqrt{\frac{T}{365}}$$
+- Fetch IV for ATM or near-the-money BTC options with expiry $\approx T$.
+- Use that IV directly as $\sigma$.
 
-Example:
+**Option 2: Realized volatility from historical data**
 
-- $S=100{,}000$
-- $IV=0.60$
-- $T=7$
+- Compute annualized standard deviation of daily log-returns over the past $N$ days (e.g., $N=30$):
 
-$$\text{Expected Move} \approx 100{,}000 \times 0.60 \times \sqrt{7/365} \approx \pm 8{,}300$$
+$$\sigma_{\text{realized}} = \text{std}(\ln(S_t / S_{t-1})) \times \sqrt{365}$$
 
-Interpretation:
+- For crypto, consider upweighting recent volatility or using a shorter lookback (e.g., 14–21 days).
 
-- If $[L, U]$ is much tighter than $[S-\text{Move},\, S+\text{Move}]$, breakout risk is high → NO tends to be more attractive.
+---
 
-## Step 2 — Adjust for “fat tails” (crypto reality)
+## Step 2 — Compare model probability to market-implied probability
 
-A normal model often underestimates extreme moves.
+The Polymarket orderbook gives you:
 
-Practical takeaway:
+- `YES_price` and `NO_price` (should sum close to 1.00)
 
-- Treat the delta/IV estimate as a baseline and be conservative about tail risk (i.e., assume breakout is *more* likely than a naive bell curve suggests).
+The market-implied probabilities are:
 
-## Step 3 — Execution checklist
+$$P_{\text{market}}(\text{Inside}) = \text{YES\_price}$$
+$$P_{\text{market}}(\text{Breakout}) = \text{NO\_price}$$
 
-Before trading:
+### Edge calculation
 
-- [ ] You have a current IV/delta snapshot (not stale)
-- [ ] Your estimated $P(\text{Breakout})$ beats the market-implied probability by a margin
-- [ ] Orderbook liquidity is acceptable (spread + depth)
+Your **theoretical edge** on buying NO is:
 
-## Minimal automation spec (the “new strategy”)
+$$\text{Edge} = P_{\text{model}}(\text{Breakout}) - \text{NO\_ask\_price}$$
 
-If you want to try this as a bot, keep it simple:
+Only enter if:
 
-1) Choose one range market and its YES/NO token IDs
-2) On a schedule, compute $P(\text{Breakout})$ (Method A or B)
-3) Fetch the best ask for **NO**
-4) Enter **only** if:
+$$\text{Edge} \ge \texttt{EDGE\_THRESHOLD} + \text{costs}$$
 
-$$P(\text{Breakout}) - \text{NO\_ask\_price} \ge \texttt{EDGE\_THRESHOLD}$$
+where costs include:
 
-5) Size small and enforce a hard cap
+- Spread (bid–ask)
+- Polymarket fees (~2% on winnings)
+- Slippage if orderbook is thin
+
+---
+
+## Step 3 — Adjust for crypto fat tails
+
+The lognormal model assumes normal log-returns, but BTC exhibits:
+
+- **Fatter tails** (larger moves than normal predicts)
+- **Skew** and **jump risk** (especially around major news / liquidation cascades)
+
+Practical adjustments:
+
+1. **Vol bump**: Increase your $\sigma$ estimate by 5–15% (e.g., if IV = 0.60, use 0.63–0.69) to account for tail risk.
+2. **Realized vol floor**: Even if recent realized vol is low, don't use $\sigma < 0.50$ for weekly BTC.
+3. **Skew check**: If the bracket is asymmetric relative to spot (e.g., $S_0$ near lower bound), options deltas or skew can hint at directional bias—adjust accordingly.
+
+---
+
+## Step 4 — Backtest the right event
+
+Your backtest said "price never stayed in a $2k bracket for a week," but that's probably measuring the **intraweek range** (high/low), not the **settlement price at $T$**.
+
+**Correct backtest metric**:
+
+- For each historical week, record $S_T$ (the BTC price at the exact settlement time/index, e.g., noon ET).
+- Check if $L \le S_T \le U$.
+- Compute empirical $P(\text{settle inside bracket})$ over many weeks.
+
+Compare that empirical frequency to your lognormal model's $P(\text{Inside})$. If the model systematically underestimates breakouts, add a volatility bump or tail adjustment.
+
+---
+
+## Step 5 — Execution checklist
+
+Before entering:
+
+- [ ] You have a current $\sigma$ estimate (IV or realized vol, adjusted for tails)
+- [ ] Your $P_{\text{model}}(\text{Breakout})$ exceeds `NO_ask` by at least `EDGE_THRESHOLD` + costs
+- [ ] Orderbook liquidity is acceptable (spread < 2–3%, depth sufficient for your size)
+- [ ] You know the exact resolution time/index (e.g., Binance BTC/USD 1-min close at noon ET)
+- [ ] Backtest confirms your model isn't systematically biased
+
+---
+
+## Minimal automation spec
+
+If you want to automate this:
+
+1. **Choose a market**: Get the token IDs for YES/NO on a specific bracket (e.g., 90–92k for Dec 19).
+2. **Fetch inputs**: Current $S_0$, time to expiry $T$, and $\sigma$ (IV or realized).
+3. **Compute $P(\text{Breakout})$**: Use the lognormal formula above.
+4. **Fetch orderbook**: Get best ask for NO.
+5. **Calculate edge**: $\text{Edge} = P(\text{Breakout}) - \text{NO\_ask}$.
+6. **Enter conditionally**:
+
+   ```python
+   if Edge >= EDGE_THRESHOLD + estimated_costs:
+       place_limit_order(token_id=NO_token, side="BUY", size=position_size, price=NO_ask)
+   ```
+
+7. **Risk controls**:
+   - `MAX_POSITION_USDC` (e.g., $100–500)
+   - `COOLDOWN_SECONDS` (don't spam orders)
+   - Exit rule: sell NO if edge disappears or close to expiry
 
 Suggested knobs:
 
-- `EDGE_THRESHOLD` (e.g., 0.03–0.10)
+- `EDGE_THRESHOLD`: 0.03–0.10 (3–10%)
+- `VOL_ADJUSTMENT`: 1.05–1.15 (multiply $\sigma$ by this to be conservative)
 - `MAX_POSITION_USDC`
 - `COOLDOWN_SECONDS`
-- Exit rule: time-based (e.g., don’t hold past a cutoff), or price-based (sell when NO mean-reverts / edge disappears)
 
-If you tell me which probability method you want (delta vs IV) and the expiry horizon you’re targeting (hours/days/weeks), I can tailor this doc into an exact implementation plan matching the repo’s current tooling (Magic Link creds + `uv` + `poly` venv).
+If you want a full Python implementation using the repo's existing `poly` venv + Magic Link creds + `uv`, let me know your preferred vol source (IV vs realized) and I'll build it out.
