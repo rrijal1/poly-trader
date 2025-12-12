@@ -6,7 +6,7 @@ This strategy watches **Hyperliquid BTC price** vs the **Polymarket CLOB top-of-
 
 ```bash
 cd strategy_btc_15m_lag_arb
-uv pip install -r requirements.txt
+uv pip install -r ../requirements.txt
 cp .env.example .env
 ```
 

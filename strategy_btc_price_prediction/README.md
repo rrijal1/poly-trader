@@ -5,7 +5,7 @@ This folder contains the standalone BTC Price Prediction Strategy for Railway de
 ## Railway Deployment
 
 1. **Connect Repository**: Point Railway to this specific folder (`strategy_btc_price_prediction`)
-2. **Build Command**: `uv pip install -r requirements.txt`
+2. **Build Command**: `uv pip install -r ../requirements.txt`
 3. **Start Command**: `python main.py`
 4. **Environment Variables**:
    - `PM_PRIVATE_KEY`: Magic Link export from https://reveal.magic.link/polymarket
@@ -22,5 +22,4 @@ Uses technical analysis to predict BTC price movements and identify mispriced BT
 
 - `main.py`: Standalone runner script
 - `btc_strategy.py`: Core BTC prediction strategy implementation
-- `requirements.txt`: Python dependencies
 - `README.md`: This documentation

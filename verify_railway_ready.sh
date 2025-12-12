@@ -18,7 +18,8 @@ for strategy in "${STRATEGIES[@]}"; do
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     # Check required files exist
-    REQUIRED_FILES=("common.py" "main.py" "requirements.txt" ".env.example")
+    # requirements.txt is shared at repo root
+    REQUIRED_FILES=("common.py" "main.py" ".env.example")
     
     for file in "${REQUIRED_FILES[@]}"; do
         if [ -f "$strategy/$file" ]; then

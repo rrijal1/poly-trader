@@ -6,7 +6,7 @@ Minimal smoke test to confirm your Magic Link credentials work and that you can 
 
 ```bash
 cd test_polymarket_connectivity
-uv pip install -r requirements.txt
+uv pip install -r ../requirements.txt
 cp .env.example .env
 python test_orderbook.py
 ```

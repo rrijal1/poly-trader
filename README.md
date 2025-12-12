@@ -14,7 +14,7 @@ Each strategy folder is self-contained. Pick one:
 
 ```bash
 cd strategy_price_arbitrage
-uv pip install -r requirements.txt
+uv pip install -r ../requirements.txt
 cp .env.example .env
 python main.py
 ```
@@ -80,9 +80,12 @@ railway logs --follow
 - ✅ **Start small** - Test with minimal capital first
 - ✅ **Monitor closely** - Set up alerts
 
-### Agent Wallet Setup
+### Credentials
 
-See [`AGENT_WALLET_SETUP.md`](AGENT_WALLET_SETUP.md) for complete trading-only agent wallet configuration.
+This repo assumes the Magic Link / Email flow:
+
+- `PM_PRIVATE_KEY`: export from https://reveal.magic.link/polymarket
+- `PM_PROXY_ADDRESS`: address shown under your profile picture on Polymarket
 
 ## 📈 Scaling
 
@@ -112,7 +115,7 @@ ls strategy_price_arbitrage/common.py
 No POLYGON_WALLET_PRIVATE_KEY found
 ```
 
-**Fix**: Check `.env` file or Railway dashboard variables
+**Fix**: Check `.env` file or Railway dashboard variables (use `PM_PRIVATE_KEY` / `PM_PROXY_ADDRESS`)
 
 ### CLOB Connection Error
 
