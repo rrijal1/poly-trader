@@ -1,12 +1,6 @@
-"""
-Common utilities and data structures for Polymarket trading strategies.
-Optimized for minimal fees, low latency, and maximum efficiency.
-"""
-
 import os
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from dataclasses import dataclass
-from datetime import datetime
 import logging
 
 from py_clob_client.clob_types import OrderBookSummary
@@ -24,31 +18,6 @@ class TradeSignal:
     confidence: float
     token_id: Optional[str] = None  # For direct CLOB trading
 
-@dataclass
-class MarketData:
-    """Streamlined market data structure."""
-    market_id: str
-    question: str
-    outcomes: List[str]
-    outcome_prices: List[float]
-    volume: float
-    liquidity: float
-    end_date: Optional[datetime]
-    token_ids: List[str]
-
-@dataclass
-class TraderProfile:
-    """Minimal trader profile for copy trading."""
-    address: str
-    username: str
-    pnl_7d: float
-    pnl_30d: float
-    pnl_all_time: float
-    win_rate: float
-    total_trades: int
-    wallet_balance: float
-    last_updated: datetime
-
 class OptimizedClobClient:
     """
     Streamlined CLOB client using official py-clob-client.
@@ -57,23 +26,32 @@ class OptimizedClobClient:
 
     def __init__(self, host: str = "https://clob.polymarket.com", chain_id: int = 137):
         from py_clob_client.client import ClobClient
-        from py_clob_client.clob_types import ApiCreds
 
         self.host = host
         self.chain_id = chain_id
-        self.private_key = os.getenv('POLYGON_WALLET_PRIVATE_KEY')
+        self.private_key = os.getenv('PM_PRIVATE_KEY')
+        self.funder = os.getenv('PM_PROXY_ADDRESS')
 
         if not self.private_key:
-            logger.warning("No POLYGON_WALLET_PRIVATE_KEY found - running in read-only mode")
+            logger.warning("No PM_PRIVATE_KEY found - running in read-only mode")
             self.client = ClobClient(host)
             self.mode = "read-only"
         else:
             # Initialize with full trading capabilities
-            self.client = ClobClient(
-                host=host,
-                key=self.private_key,
-                chain_id=chain_id
-            )
+            if self.funder:
+                self.client = ClobClient(
+                    host=host,
+                    key=self.private_key,
+                    chain_id=chain_id,
+                    signature_type=1,
+                    funder=self.funder,
+                )
+            else:
+                self.client = ClobClient(
+                    host=host,
+                    key=self.private_key,
+                    chain_id=chain_id
+                )
 
             # Set up API credentials for authenticated requests
             creds = self.client.create_or_derive_api_creds()
@@ -81,48 +59,6 @@ class OptimizedClobClient:
             self.mode = "trading"
 
         logger.info(f"Initialized CLOB client in {self.mode} mode")
-
-    def get_market_data(self, market_id: str) -> Optional[MarketData]:
-        """Get streamlined market data with minimal API calls."""
-        try:
-            # Use Gamma API for market metadata (faster than CLOB)
-            import requests
-            gamma_url = f"https://gamma-api.polymarket.com/markets/{market_id}"
-            response = requests.get(gamma_url, timeout=5)
-            data = response.json()
-
-            return MarketData(
-                market_id=market_id,
-                question=data.get('question', ''),
-                outcomes=data.get('outcomes', []),
-                outcome_prices=data.get('outcomePrices', []),
-                volume=data.get('volume', 0),
-                liquidity=data.get('liquidity', 0),
-                end_date=datetime.fromisoformat(data.get('endDate', '').replace('Z', '+00:00')) if data.get('endDate') else None,
-                token_ids=data.get('clobTokenIds', [])
-            )
-        except Exception as e:
-            logger.error(f"Failed to get market data for {market_id}: {e}")
-            return None
-
-    def get_trader_trades(self, trader_address: str, limit: int = 50) -> List[Dict]:
-        """Get recent trades for a specific trader using optimized TradeParams."""
-        if self.mode != "trading":
-            logger.warning("Cannot get trader trades in read-only mode")
-            return []
-
-        try:
-            from py_clob_client.clob_types import TradeParams
-
-            # Get recent trades for this trader
-            params = TradeParams(maker_address=trader_address)
-            trades = self.client.get_trades(params)
-
-            # Return only the most recent trades
-            return trades[:limit] if trades else []
-        except Exception as e:
-            logger.error(f"Failed to get trades for trader {trader_address}: {e}")
-            return []
 
     def execute_market_order(self, token_id: str, side: str, amount: float) -> Optional[Dict]:
         """Execute market order with minimal fees and maximum speed."""

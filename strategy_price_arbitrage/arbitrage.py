@@ -31,7 +31,11 @@ class PriceArbitrageStrategy:
             return signals
         
         total = yes_price + no_price
-        threshold = self.config.get('threshold', 0.01)  # Default 1 cent
+        # Threshold increased to 0.03 to account for:
+        # 1. Taker fees (usually ~2% round trip)
+        # 2. Slippage
+        # 3. Execution risk
+        threshold = self.config.get('threshold', 0.03)
         
         if total < (1 - threshold):
             # Arbitrage opportunity: place market orders on both sides

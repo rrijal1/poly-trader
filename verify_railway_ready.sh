@@ -5,10 +5,9 @@ echo "🔍 Verifying Railway Deployment Readiness..."
 echo ""
 
 STRATEGIES=(
-    "strategy_copy_trading"
     "strategy_price_arbitrage"
     "strategy_btc_price_prediction"
-    "strategy_counter_trading"
+    "strategy_btc_15m_lag_arb"
 )
 
 ALL_PASSED=true
@@ -34,8 +33,15 @@ for strategy in "${STRATEGIES[@]}"; do
     echo ""
     echo "🧪 Testing imports..."
     cd "$strategy" || exit
+
+    # Prefer uv-managed python when available.
+    if command -v uv >/dev/null 2>&1; then
+        PYTHON_CMD="uv run python"
+    else
+        PYTHON_CMD="python3"
+    fi
     
-    if python3 -c "from common import TradeSignal, get_clob_client, OptimizedClobClient; print('✅ Imports successful')" 2>&1; then
+    if $PYTHON_CMD -c "from common import get_clob_client, OptimizedClobClient; print('✅ Imports successful')" 2>&1; then
         :
     else
         echo "❌ Import test FAILED"
