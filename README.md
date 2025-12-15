@@ -1,12 +1,12 @@
-# Polymarket Trader
+# Kalshi Trader
 
-Standalone, Railway-ready Polymarket strategies using the official `py-clob-client`.
+Standalone, Railway-ready Kalshi trading strategies using the official Kalshi API.
 
 ## Strategies in this repo
 
 - `strategy_price_arbitrage/`: Buys both outcomes when YES + NO is sufficiently below $1.
-- `strategy_btc_price_prediction/`: BTC market analysis using volatility/conditional-probability heuristics.
-- `strategy_btc_15m_lag_arb/`: Lag-arb scaffold using Hyperliquid BTC price vs Polymarket top-of-book.
+- `strategy_btc_price_prediction/`: BTC market analysis (simplified for Kalshi).
+- `strategy_btc_15m_lag_arb/`: Lag-arb scaffold for monitoring external BTC price vs Kalshi markets.
 
 ## How to run
 
@@ -14,8 +14,9 @@ Each strategy folder is self-contained. Pick one:
 
 ```bash
 cd strategy_price_arbitrage
-uv pip install -r ../requirements.txt
-cp .env.example .env
+pip install -r ../requirements.txt
+cp ../.env.example .env
+# Edit .env with your Kalshi credentials
 python main.py
 ```
 
@@ -23,34 +24,40 @@ python main.py
 
 - This repo does not include copy-trading functionality.
 - Trading involves significant risk; test with small sizes first.
+- Start with DEMO environment before moving to PROD.
 
 ## 🔧 Official API Integration
 
-All strategies use official `py-clob-client` patterns:
+All strategies use the official Kalshi API patterns:
 
 ```python
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import MarketOrderArgs, OrderType
-from py_clob_client.order_builder.constants import BUY
+from kalshi_client import KalshiClient, Environment
+
+# Initialize client
+client = KalshiClient(environment=Environment.DEMO)
 
 # Market order execution
-order_args = MarketOrderArgs(token_id=token_id, amount=amount, side=BUY)
-signed_order = client.create_market_order(order_args)
-result = client.post_order(signed_order, orderType=OrderType.FOK)
+result = client.execute_market_order(
+    ticker="TICKER",
+    side="yes",  # or "no"
+    count=10,
+    action="buy"
+)
 ```
 
 ## 🧪 Verification
 
-Run the verification script to ensure everything is ready:
+Run the test script to ensure everything is set up correctly:
 
 ```bash
-./verify_railway_ready.sh
+cd test_kalshi_connectivity
+python test_connectivity.py
 ```
 
 Expected output:
 
 ```
-✅ ALL CHECKS PASSED - Ready for Railway!
+✅ ALL TESTS PASSED - Kalshi connectivity verified!
 ```
 
 ## 📊 Monitoring
@@ -60,7 +67,7 @@ Each strategy logs:
 - Trade signals generated
 - Orders executed
 - API errors
-- Wallet balances
+- Account balances
 - Performance metrics
 
 ```bash
@@ -73,23 +80,33 @@ railway logs --follow
 
 ## 🛡️ Security
 
-- ✅ **Agent Wallets**: Trading-only wallets that cannot withdraw funds
-- ✅ **Funder Wallets**: Secure wallets holding actual funds
-- ✅ **Separate wallets per strategy** - Risk isolation
-- ✅ **Never commit .env** - Use Railway secrets
+- ✅ **API Keys**: Use dedicated trading API keys with appropriate permissions
+- ✅ **Private Keys**: Store RSA private keys securely, never commit to git
+- ✅ **Separate keys per strategy** - Risk isolation
+- ✅ **Never commit .env** - Use Railway secrets or environment variables
 - ✅ **Start small** - Test with minimal capital first
 - ✅ **Monitor closely** - Set up alerts
+- ✅ **Use DEMO first** - Test thoroughly before using PROD
 
 ### Credentials
 
-This repo assumes the Magic Link / Email flow:
+This repo uses Kalshi API authentication:
 
-- `PM_PRIVATE_KEY`: export from https://reveal.magic.link/polymarket
-- `PM_PROXY_ADDRESS`: address shown under your profile picture on Polymarket
+- `KALSHI_API_KEY_ID`: Your API key ID from Kalshi
+- `KALSHI_PRIVATE_KEY_PATH`: Path to your RSA private key file
+- `KALSHI_ENVIRONMENT`: Either "DEMO" or "PROD"
+
+To get your API credentials:
+
+1. Log in to [Kalshi](https://kalshi.com) (or [demo.kalshi.co](https://demo.kalshi.co) for demo)
+2. Go to Settings → API Keys
+3. Generate a new API key
+4. Download the private key file and save it securely
+5. Copy the API key ID
 
 ## 📈 Scaling
 
-1. **Test locally** - Verify with paper trading
+1. **Test locally** - Verify with DEMO environment
 2. **Deploy one strategy** - Start with smallest positions
 3. **Monitor 24 hours** - Watch logs and P&L
 4. **Scale gradually** - Increase positions as confidence grows
@@ -97,54 +114,41 @@ This repo assumes the Magic Link / Email flow:
 
 ## 🐛 Troubleshooting
 
-### Import Error
+### Authentication Error
 
-```
-ModuleNotFoundError: No module named 'common'
-```
+Check that:
+- Your `KALSHI_API_KEY_ID` is correct
+- Your private key file exists at `KALSHI_PRIVATE_KEY_PATH`
+- The private key format is correct (PEM format)
 
-**Fix**: Ensure `common.py` exists in strategy folder
+### Connection Error
 
-```bash
-ls strategy_price_arbitrage/common.py
-```
+- Verify your internet connection
+- Check if Kalshi API is accessible
+- Ensure you're using the correct environment (DEMO vs PROD)
 
-### Missing Environment Variables
+### Order Execution Issues
 
-```
-No POLYGON_WALLET_PRIVATE_KEY found
-```
-
-**Fix**: Check `.env` file or Railway dashboard variables (use `PM_PRIVATE_KEY` / `PM_PROXY_ADDRESS`)
-
-### CLOB Connection Error
-
-```
-Failed to create API credentials
-```
-
-**Fix**:
-
-1. Verify all 4 CLOB variables are set
-2. Check wallet has USDC balance
-3. Verify API keys are correct
+- Check account balance
+- Verify market is open and tradeable
+- Ensure your API key has trading permissions
+- Check order size meets market minimums
 
 ## 📚 Documentation
 
-- **Official py-clob-client**: https://github.com/Polymarket/py-clob-client
-- **Polymarket API**: https://docs.polymarket.com
+- **Kalshi API**: https://trading-api.readme.io/reference/getting-started
+- **Kalshi Demo**: https://demo-api.kalshi.co
 - **Railway Docs**: https://docs.railway.app
 
 ## 🎯 Production Checklist
 
-- [ ] All `.env` files configured with real credentials
-- [ ] Wallet funded with USDC on Polygon
-- [ ] CLOB API keys created and working
-- [ ] Token approvals set for trading
+- [ ] All `.env` files configured with Kalshi credentials
+- [ ] API key created and private key downloaded
+- [ ] Account funded (if using PROD)
+- [ ] Test connectivity script passes
 - [ ] Railway deployment configured
 - [ ] Monitoring and alerts set up
-- [ ] Test trades executed successfully
-- [ ] Verification script passes
+- [ ] Test trades executed successfully in DEMO
 
 ## ⚙️ Railway Commands
 
@@ -163,24 +167,27 @@ railway open          # Open dashboard
 
 - **Hobby Plan**: $5/month per service
 - **Pro Plan**: $20/month + usage
-- **4 Strategies**: ~$20-80/month depending on plan
+- **Multiple Strategies**: ~$20-80/month depending on plan
 
 ## 📞 Support
 
 - Railway: https://railway.app/help
+- Kalshi: https://kalshi.com/support
 - Issues: Open a GitHub issue
-- Questions: See documentation links above
 
 ## ⚠️ Disclaimer
 
 Trading involves significant risk. This software is for educational purposes only. Use at your own risk. Always:
 
-- Test with small amounts first
+- Test with DEMO environment first
+- Test with small amounts
 - Monitor positions closely
 - Set appropriate risk limits
 - Never invest more than you can afford to lose
 
 ## 📄 License
+
+MIT
 
 MIT
 

@@ -1,5 +1,7 @@
-py-clob-client
+cryptography
+requests
 python-dotenv
 pandas
 numpy
-requests
+websockets
+

@@ -1,6 +1,7 @@
 """
 Price Arbitrage Strategy
 Places trades on both sides when yes_price + no_price < 1 USD.
+Adapted for Kalshi markets.
 """
 
 import logging
@@ -8,7 +9,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass
 import pandas as pd
 
-from common import TradeSignal, get_clob_client
+from common import TradeSignal, get_client
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class PriceArbitrageStrategy:
     
     def __init__(self, config: Dict):
         self.config = config
-        self.client = get_clob_client()  # Use optimized CLOB client
+        self.client = get_client()  # Use Kalshi client
     
     def analyze_market(self, market_data: Dict) -> List[TradeSignal]:
         """Analyze market for arbitrage opportunities using market orders."""
@@ -25,47 +26,51 @@ class PriceArbitrageStrategy:
         
         yes_price = market_data.get('yes_price', 0)
         no_price = market_data.get('no_price', 0)
-        token_ids = market_data.get('token_ids', [])
+        ticker = market_data.get('ticker', '')
         
-        if yes_price == 0 or no_price == 0 or len(token_ids) < 2:
+        if yes_price == 0 or no_price == 0 or not ticker:
             return signals
         
         total = yes_price + no_price
-        # Threshold increased to 0.03 to account for:
-        # 1. Taker fees (usually ~2% round trip)
-        # 2. Slippage
-        # 3. Execution risk
+        # Threshold for arbitrage accounting for fees and slippage
         threshold = self.config.get('threshold', 0.03)
         
         if total < (1 - threshold):
             # Arbitrage opportunity: place market orders on both sides
-            market_id = market_data['market_id']
-            size = min(self.config.get('max_size', 100), market_data.get('volume', 0) * 0.01)
+            size = min(
+                self.config.get('max_size', 100),
+                market_data.get('volume', 0) * 0.01
+            )
             
-            # Calculate sizes based on prices (buy more of the cheaper side)
-            total_cost = total * size
-            profit = (1 - total) * size
+            # Convert size to integer contracts (Kalshi uses integer contracts)
+            size_contracts = int(size)
+            if size_contracts < 1:
+                size_contracts = 1
+            
+            # Calculate potential profit
+            total_cost = (yes_price + no_price) * size_contracts
+            profit = (1 - total) * size_contracts
             
             # Signal for YES (market order)
             signals.append(TradeSignal(
-                market_id=market_id,
+                market_id=ticker,
                 action='buy_yes',
-                price=yes_price,  # Market price will be determined at execution
-                size=size,
-                reason=f'Arbitrage: total {total:.4f} < 1, potential profit ${profit:.2f} (market order)',
+                price=yes_price,
+                size=size_contracts,
+                reason=f'Arbitrage: total {total:.4f} < 1, potential profit ${profit:.2f}',
                 confidence=min(1.0, (1 - total) / threshold),
-                token_id=token_ids[0] if len(token_ids) > 0 else None  # YES token
+                ticker=ticker
             ))
             
             # Signal for NO (market order)
             signals.append(TradeSignal(
-                market_id=market_id,
+                market_id=ticker,
                 action='buy_no',
-                price=no_price,  # Market price will be determined at execution
-                size=size,
-                reason=f'Arbitrage: total {total:.4f} < 1, potential profit ${profit:.2f} (market order)',
+                price=no_price,
+                size=size_contracts,
+                reason=f'Arbitrage: total {total:.4f} < 1, potential profit ${profit:.2f}',
                 confidence=min(1.0, (1 - total) / threshold),
-                token_id=token_ids[1] if len(token_ids) > 1 else None  # NO token
+                ticker=ticker
             ))
         
         return signals
