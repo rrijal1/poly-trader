@@ -117,6 +117,7 @@ To get your API credentials:
 ### Authentication Error
 
 Check that:
+
 - Your `KALSHI_API_KEY_ID` is correct
 - Your private key file exists at `KALSHI_PRIVATE_KEY_PATH`
 - The private key format is correct (PEM format)
