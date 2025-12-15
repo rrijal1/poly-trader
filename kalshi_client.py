@@ -51,15 +51,30 @@ class KalshiClient:
         
         # Load private key if not provided
         if private_key is None:
-            key_file_path = os.getenv('KALSHI_PRIVATE_KEY_PATH')
-            if key_file_path and os.path.exists(key_file_path):
-                with open(key_file_path, 'rb') as key_file:
+            # Option 1: Try inline private key from environment variable
+            inline_key = os.getenv('KALSHI_PRIVATE_KEY')
+            if inline_key:
+                try:
+                    # Handle escaped newlines in the key
+                    key_content = inline_key.replace('\\n', '\n').encode('utf-8')
                     self.private_key = serialization.load_pem_private_key(
-                        key_file.read(),
+                        key_content,
                         password=None
                     )
+                except Exception as e:
+                    logger.error(f"Failed to load inline private key: {e}")
+                    self.private_key = None
             else:
-                self.private_key = None
+                # Option 2: Try loading from file path
+                key_file_path = os.getenv('KALSHI_PRIVATE_KEY_PATH')
+                if key_file_path and os.path.exists(key_file_path):
+                    with open(key_file_path, 'rb') as key_file:
+                        self.private_key = serialization.load_pem_private_key(
+                            key_file.read(),
+                            password=None
+                        )
+                else:
+                    self.private_key = None
         else:
             self.private_key = private_key
         
