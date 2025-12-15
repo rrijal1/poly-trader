@@ -2,6 +2,7 @@
 poly/
 venv/
 env/
+kc/
 
 # Official documentation (not tracked)
 official-docs/
@@ -9,6 +10,14 @@ official-docs/
 # Environment variables
 .env
 .env.local
+
+# Private keys and sensitive data (CRITICAL)
+kalshi/
+kc.txt
+*.pem
+*.key
+*_private_key.txt
+private_key*
 
 # Python cache
 __pycache__/
